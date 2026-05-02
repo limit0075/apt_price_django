@@ -1,0 +1,222 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>아파트 실거래가 조회</title>
+<link rel="stylesheet" href="{% static 'css/style.css' %}">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+
+<!-- ── 헤더 ──────────────────────────────────────────────────── -->
+<div class="header">
+  <div class="header-logo">
+    <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M8 2L14 6V14H10V10H6V14H2V6L8 2Z" fill="white"/>
+    </svg>
+  </div>
+  <h1>아파트 실거래가 조회</h1>
+</div>
+
+<!-- ── 컨테이너 ──────────────────────────────────────────────── -->
+<div class="container">
+
+  <!-- 기본 정보 -->
+  <div class="card">
+    <div class="card-title">기본 정보</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>시/도</label>
+        <input type="text" id="city" value="서울특별시" placeholder="서울특별시">
+      </div>
+      <div class="form-group">
+        <label>구/군</label>
+        <input type="text" id="district" value="노원구" placeholder="노원구">
+      </div>
+      <div class="form-group">
+        <label>시작 월 (YYYYMM)</label>
+        <input type="text" id="start-date" value="202501" placeholder="202501" maxlength="6">
+      </div>
+      <div class="form-group">
+        <label>종료 월 (YYYYMM)</label>
+        <input type="text" id="end-date" value="202512" placeholder="202512" maxlength="6">
+      </div>
+    </div>
+  </div>
+
+  <!-- 모드 탭 -->
+  <div class="mode-tabs">
+    <button class="mode-tab active" data-mode="address">주소 검색</button>
+    <button class="mode-tab"        data-mode="filter">조건 검색</button>
+  </div>
+
+  <!-- ============================================================
+       주소 검색 모드
+       ============================================================ -->
+  <div id="addr-mode">
+
+    <div id="steps-addr" class="steps"></div>
+
+    <!-- Step 1 -->
+    <div class="card">
+      <div class="card-title">주소 검색</div>
+      <div class="config-row">
+        <div class="form-group" style="flex:1">
+          <label>도로명 / 지번 / 우편번호</label>
+          <input type="text" id="addr-key-input" placeholder="예) 한천로 248, 공릉동 624, 01234">
+        </div>
+        <button class="btn btn-primary" id="addr-search-btn">검색</button>
+      </div>
+      <div id="addr-loading" class="loading hidden">
+        <div class="spinner"></div> 주소 검색 중...
+      </div>
+      <div id="addr-error" class="error-msg hidden"></div>
+      <div id="addr-cands" class="hidden">
+        <div style="height:.5px;background:var(--c-border);margin:1rem 0;"></div>
+        <div style="font-size:13px;color:var(--c-text-2);font-weight:500;margin-bottom:6px;">주소 선택</div>
+        <div id="addr-cand-list"></div>
+      </div>
+    </div>
+
+    <!-- Step 2 -->
+    <div id="complex-card-addr" class="card hidden">
+      <div class="card-title">단지 선택</div>
+      <div id="complex-loading-addr" class="loading hidden">
+        <div class="spinner"></div> 단지 조회 중...
+      </div>
+      <div id="complex-error-addr" class="error-msg hidden"></div>
+      <div id="complex-list-addr"></div>
+    </div>
+
+    <!-- Step 3 -->
+    <div id="area-card-addr" class="card hidden">
+      <div class="card-title">전용면적 선택</div>
+      <div id="area-loading-addr" class="loading hidden">
+        <div class="spinner"></div> 면적 조회 중...
+      </div>
+      <div id="area-list-addr"></div>
+    </div>
+
+    <!-- Step 4 -->
+    <div id="results-addr" class="hidden">
+      <div id="metrics-addr"></div>
+      <div id="district-gauge-addr"></div>
+      <div class="card">
+        <div class="chart-header">
+          <div class="card-title">가격 추이</div>
+          <div class="chart-toggles" id="chart-toggle-addr"></div>
+        </div>
+        <div class="chart-container"><canvas id="price-chart-addr"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">실거래 내역</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>계약일</th><th>단지명</th><th>면적</th><th>층</th>
+                <th>건축년도</th><th>거래금액</th><th>도로명주소</th>
+              </tr>
+            </thead>
+            <tbody id="result-tbody-addr"></tbody>
+          </table>
+        </div>
+      </div>
+      <div id="nearby-addr"></div>
+    </div>
+
+  </div><!-- /addr-mode -->
+
+
+  <!-- ============================================================
+       조건 검색 모드
+       ============================================================ -->
+  <div id="filter-mode" class="hidden">
+
+    <div id="steps-filter" class="steps"></div>
+
+    <!-- Step 1 -->
+    <div class="card">
+      <div class="card-title">조건 설정</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>최대 가격</label>
+          <input type="text"   id="max-price"       placeholder="예) 8억, 80000">
+        </div>
+        <div class="form-group">
+          <label>최소 세대수</label>
+          <input type="number" id="min-households"  placeholder="예) 500" min="0">
+        </div>
+        <div class="form-group">
+          <label>최대 세대수</label>
+          <input type="number" id="max-households"  placeholder="예) 2000" min="0">
+        </div>
+      </div>
+      <div style="margin-top:14px;">
+        <button class="btn btn-primary" id="filter-search-btn">단지 목록 조회</button>
+      </div>
+      <div id="filter-loading" class="loading hidden">
+        <div class="spinner"></div>
+        조건 검색 중... (데이터 수집 중이라 시간이 걸릴 수 있습니다)
+      </div>
+      <div id="filter-error" class="error-msg hidden"></div>
+    </div>
+
+    <!-- Step 2 -->
+    <div id="complex-card-filter" class="card hidden">
+      <div class="card-title">
+        단지 선택
+        <span id="filter-count" style="font-weight:400;text-transform:none;letter-spacing:0;"></span>
+      </div>
+      <div id="filter-list-map" class="apt-map" style="display:none;margin-bottom:1rem;"></div>
+      <div id="complex-list-filter"></div>
+    </div>
+
+    <!-- Step 3 -->
+    <div id="area-card-filter" class="card hidden">
+      <div class="card-title">전용면적 선택</div>
+      <div id="area-loading-filter" class="loading hidden">
+        <div class="spinner"></div> 면적 조회 중...
+      </div>
+      <div id="area-list-filter"></div>
+    </div>
+
+    <!-- Step 4 -->
+    <div id="results-filter" class="hidden">
+      <div id="metrics-filter"></div>
+      <div id="district-gauge-filter"></div>
+      <div class="card">
+        <div class="chart-header">
+          <div class="card-title">가격 추이</div>
+          <div class="chart-toggles" id="chart-toggle-filter"></div>
+        </div>
+        <div class="chart-container"><canvas id="price-chart-filter"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">실거래 내역</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>계약일</th><th>단지명</th><th>면적</th><th>층</th>
+                <th>건축년도</th><th>거래금액</th><th>도로명주소</th>
+              </tr>
+            </thead>
+            <tbody id="result-tbody-filter"></tbody>
+          </table>
+        </div>
+      </div>
+      <div id="nearby-filter"></div>
+    </div>
+
+  </div><!-- /filter-mode -->
+
+</div><!-- /container -->
+
+<script type="module" src="{% static 'js/main.js' %}"></script>
+</body>
+</html>
