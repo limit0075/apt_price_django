@@ -5,6 +5,7 @@ Django JSON API 뷰.
 무거운 작업은 services.py 에 위임합니다.
 """
 import json
+import traceback
 import concurrent.futures
 
 from django.http import JsonResponse
@@ -19,7 +20,6 @@ _executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 # ── 헬퍼 ──────────────────────────────────────────────────────
 
 def _body(request) -> dict:
-    """요청 바디를 JSON으로 파싱"""
     try:
         return json.loads(request.body)
     except Exception:
@@ -27,9 +27,14 @@ def _body(request) -> dict:
 
 
 def _run(fn, *args, **kwargs):
-    """블로킹 작업을 ThreadPool에서 실행 (동기 Django 용)"""
     future = _executor.submit(fn, *args, **kwargs)
-    return future.result(timeout=120)
+    return future.result(timeout=300)
+
+
+def _err(e: Exception) -> JsonResponse:
+    msg = str(e) or type(e).__name__
+    traceback.print_exc()
+    return JsonResponse({'ok': False, 'error': msg}, status=500)
 
 
 def _require_base(body: dict):
@@ -47,6 +52,22 @@ def health(request):
     return JsonResponse({'ok': True})
 
 
+# ── 구별 평균가 ticker ────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def district_ticker(request):
+    body = _body(request)
+    City       = body.get('City', '서울특별시')
+    start_date = body.get('start_date', '202501')
+    end_date   = body.get('end_date', '202512')
+    try:
+        data = _run(services.svc_district_ticker, City, start_date, end_date)
+        return JsonResponse(data, encoder=_SafeEncoder)
+    except Exception as e:
+        return _err(e)
+
+
 # ── 주소 모드 ─────────────────────────────────────────────────
 
 @csrf_exempt
@@ -61,7 +82,7 @@ def address_candidates(request):
         data = _run(services.svc_address_candidates, body)
         return JsonResponse(data)
     except Exception as e:
-        return JsonResponse({'ok': False, 'error': str(e)}, status=500)
+        return _err(e)
 
 
 @csrf_exempt
@@ -76,7 +97,7 @@ def address_complexes(request):
         data = _run(services.svc_address_complexes, body)
         return JsonResponse(data)
     except Exception as e:
-        return JsonResponse({'ok': False, 'error': str(e)}, status=500)
+        return _err(e)
 
 
 @csrf_exempt
@@ -91,7 +112,7 @@ def address_areas(request):
         data = _run(services.svc_address_areas, body)
         return JsonResponse(data)
     except Exception as e:
-        return JsonResponse({'ok': False, 'error': str(e)}, status=500)
+        return _err(e)
 
 
 @csrf_exempt
@@ -106,7 +127,7 @@ def address_results(request):
         data = _run(services.svc_address_results, body)
         return JsonResponse(data, encoder=_SafeEncoder)
     except Exception as e:
-        return JsonResponse({'ok': False, 'error': str(e)}, status=500)
+        return _err(e)
 
 
 # ── 조건 모드 ─────────────────────────────────────────────────
@@ -127,7 +148,7 @@ def filter_list(request):
         data = _run(services.svc_filter_list, body)
         return JsonResponse(data, encoder=_SafeEncoder)
     except Exception as e:
-        return JsonResponse({'ok': False, 'error': str(e)}, status=500)
+        return _err(e)
 
 
 @csrf_exempt
@@ -142,7 +163,7 @@ def filter_detail_areas(request):
         data = _run(services.svc_filter_detail_areas, body)
         return JsonResponse(data)
     except Exception as e:
-        return JsonResponse({'ok': False, 'error': str(e)}, status=500)
+        return _err(e)
 
 
 @csrf_exempt
@@ -157,7 +178,7 @@ def filter_detail_results(request):
         data = _run(services.svc_filter_detail_results, body)
         return JsonResponse(data, encoder=_SafeEncoder)
     except Exception as e:
-        return JsonResponse({'ok': False, 'error': str(e)}, status=500)
+        return _err(e)
 
 
 # ── 주변 시설 / 임장 블로그 ──────────────────────────────────
@@ -170,7 +191,7 @@ def nearby_info(request):
         data = _run(services.svc_nearby_info, body)
         return JsonResponse(data, encoder=_SafeEncoder)
     except Exception as e:
-        return JsonResponse({'ok': False, 'error': str(e)}, status=500)
+        return _err(e)
 
 
 # ── pandas/numpy 타입 직렬화 ─────────────────────────────────

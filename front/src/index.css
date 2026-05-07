@@ -1,0 +1,257 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================================================
+   Bloomberg-inspired Premium Dark — Real Estate Analytics Platform
+   All colors MUST be HSL.
+   ========================================================================== */
+
+@layer base {
+  :root {
+    /* Core surfaces — deep institutional black/navy */
+    --background: 222 24% 6%;
+    --foreground: 210 20% 96%;
+
+    --surface: 222 22% 9%;
+    --surface-elevated: 222 20% 12%;
+    --surface-overlay: 222 18% 15%;
+
+    --card: 222 22% 9%;
+    --card-foreground: 210 20% 96%;
+
+    --popover: 222 20% 11%;
+    --popover-foreground: 210 20% 96%;
+
+    /* Primary — signature amber/gold (Bloomberg signal color) */
+    --primary: 38 96% 56%;
+    --primary-foreground: 222 30% 6%;
+    --primary-glow: 42 100% 64%;
+    --primary-dim: 38 70% 40%;
+
+    /* Secondary — cool slate */
+    --secondary: 222 18% 16%;
+    --secondary-foreground: 210 18% 88%;
+
+    --muted: 222 16% 13%;
+    --muted-foreground: 215 14% 58%;
+
+    --accent: 222 18% 18%;
+    --accent-foreground: 210 20% 96%;
+
+    /* Financial signal colors */
+    --bull: 142 72% 48%;        /* Green — price up */
+    --bull-foreground: 0 0% 100%;
+    --bear: 0 78% 60%;          /* Red — price down */
+    --bear-foreground: 0 0% 100%;
+    --neutral: 210 12% 60%;
+    --info: 200 90% 56%;        /* Cyan — info / chart */
+    --warning: 38 96% 56%;
+
+    --destructive: 0 78% 58%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Borders & inputs */
+    --border: 222 18% 18%;
+    --border-strong: 222 16% 24%;
+    --input: 222 20% 12%;
+    --input-border: 222 16% 22%;
+    --ring: 38 96% 56%;
+
+    --radius: 0.5rem;
+
+    /* Chart palette — distinct, legible on dark */
+    --chart-1: 38 96% 56%;   /* amber */
+    --chart-2: 200 90% 56%;  /* cyan */
+    --chart-3: 142 72% 48%;  /* green */
+    --chart-4: 280 70% 65%;  /* violet */
+    --chart-5: 340 80% 60%;  /* magenta */
+    --chart-6: 24 90% 60%;   /* orange */
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(38 96% 56%), hsl(28 92% 50%));
+    --gradient-surface: linear-gradient(180deg, hsl(222 22% 10%), hsl(222 24% 7%));
+    --gradient-glow: radial-gradient(circle at 50% 0%, hsl(38 96% 56% / 0.12), transparent 60%);
+    --gradient-bull: linear-gradient(180deg, hsl(142 72% 48% / 0.25), hsl(142 72% 48% / 0));
+    --gradient-bear: linear-gradient(180deg, hsl(0 78% 60% / 0.25), hsl(0 78% 60% / 0));
+    --gradient-grid: linear-gradient(180deg, hsl(222 24% 6%), hsl(222 22% 8%));
+
+    /* Shadows — sharp, low key */
+    --shadow-elegant: 0 10px 40px -12px hsl(0 0% 0% / 0.6);
+    --shadow-glow: 0 0 32px hsl(38 96% 56% / 0.25);
+    --shadow-panel: 0 1px 0 0 hsl(222 18% 22%) inset, 0 12px 32px -16px hsl(0 0% 0% / 0.8);
+    --shadow-ticker: 0 0 0 1px hsl(38 96% 56% / 0.3), 0 0 24px hsl(38 96% 56% / 0.15);
+
+    /* Motion */
+    --transition-smooth: all 0.24s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-snap: all 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+
+    /* Sidebar (kept for shadcn compat) */
+    --sidebar-background: 222 24% 7%;
+    --sidebar-foreground: 210 18% 88%;
+    --sidebar-primary: 38 96% 56%;
+    --sidebar-primary-foreground: 222 30% 6%;
+    --sidebar-accent: 222 18% 14%;
+    --sidebar-accent-foreground: 210 20% 96%;
+    --sidebar-border: 222 16% 18%;
+    --sidebar-ring: 38 96% 56%;
+  }
+
+  /* Light mode kept minimal — product is dark-first. */
+  .light {
+    --background: 210 30% 98%;
+    --foreground: 222 30% 10%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-feature-settings: 'cv11', 'ss01', 'ss03';
+    background-image: var(--gradient-glow);
+    background-attachment: fixed;
+  }
+
+  /* Tabular numerics everywhere by default for financial UIs */
+  .num,
+  table,
+  td,
+  th {
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.3);
+    color: hsl(var(--foreground));
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: hsl(var(--background));
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border-strong));
+    border-radius: 6px;
+    border: 2px solid hsl(var(--background));
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.4);
+  }
+}
+
+@layer components {
+  .font-mono {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-feature-settings: 'zero', 'ss01';
+  }
+
+  /* Panel — primary surface for data blocks */
+  .panel {
+    @apply rounded-md border border-border bg-card;
+    box-shadow: var(--shadow-panel);
+  }
+
+  .panel-header {
+    @apply flex items-center justify-between px-4 py-2.5 border-b border-border;
+  }
+
+  .panel-title {
+    @apply text-[11px] font-mono font-semibold uppercase tracking-[0.14em] text-muted-foreground;
+  }
+
+  /* Ticker tag */
+  .ticker {
+    @apply font-mono text-[10px] uppercase tracking-[0.18em] px-1.5 py-0.5 rounded-sm;
+  }
+
+  /* Bull / Bear colors helpers */
+  .text-bull { color: hsl(var(--bull)); }
+  .text-bear { color: hsl(var(--bear)); }
+  .bg-bull { background-color: hsl(var(--bull)); }
+  .bg-bear { background-color: hsl(var(--bear)); }
+
+  /* Subtle grid background */
+  .bg-grid {
+    background-image:
+      linear-gradient(hsl(var(--border) / 0.5) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--border) / 0.5) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  /* Animated underline for nav */
+  .nav-link {
+    @apply relative text-sm text-muted-foreground transition-colors hover:text-foreground;
+  }
+  .nav-link[data-active="true"] {
+    @apply text-foreground;
+  }
+  .nav-link[data-active="true"]::after {
+    content: '';
+    @apply absolute -bottom-[14px] left-0 right-0 h-px bg-primary;
+    box-shadow: 0 0 12px hsl(var(--primary) / 0.6);
+  }
+
+  /* Pulse dot — live indicator */
+  .pulse-dot {
+    @apply relative inline-flex h-2 w-2 rounded-full bg-bull;
+  }
+  .pulse-dot::after {
+    content: '';
+    @apply absolute inset-0 rounded-full bg-bull;
+    animation: pulse-ring 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+}
+
+@layer utilities {
+  .text-balance { text-wrap: balance; }
+
+  .gradient-text {
+    background: var(--gradient-primary);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+/* ==========================================================================
+   Keyframes
+   ========================================================================== */
+@keyframes pulse-ring {
+  0% { transform: scale(1); opacity: 0.7; }
+  80%, 100% { transform: scale(2.4); opacity: 0; }
+}
+
+@keyframes ticker-scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 hsl(var(--primary) / 0.4); }
+  50% { box-shadow: 0 0 24px 4px hsl(var(--primary) / 0.2); }
+}

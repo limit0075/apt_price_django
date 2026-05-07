@@ -370,7 +370,12 @@ def get_months_between(start, end):
         cur += relativedelta(months=1)
     return months
 
+_area_price_cache: dict = {}
+
 def area_price(City, District, start_date, end_date):
+    _cache_key = (City, District, start_date, end_date)
+    if _cache_key in _area_price_cache:
+        return _area_price_cache[_cache_key]
     dates = get_months_between(start_date, end_date)
     result = []
 
@@ -402,7 +407,8 @@ def area_price(City, District, start_date, end_date):
         time.sleep(0.18)
 
     if not result:
-        return pd.DataFrame()
+        _area_price_cache[_cache_key] = pd.DataFrame()
+        return _area_price_cache[_cache_key]
 
     out = pd.concat(result).reset_index(drop=True)
     out = out.rename(columns={
@@ -424,6 +430,7 @@ def area_price(City, District, start_date, end_date):
     out["전용면적_숫자"] = out["전용면적"].astype(str).str.extract(r"(\d+\.?\d*)").astype(float)
 
     out = out.dropna(subset=["계약날짜", "거래금액_원", "전용면적_숫자", "단지명"])
+    _area_price_cache[_cache_key] = out
     return out
 
 # ==========================================================

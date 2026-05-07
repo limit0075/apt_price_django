@@ -7,7 +7,8 @@ urlpatterns = [
     path('',  views.index,  name='index'),
 
     # ── API: 공통 ──────────────────────────────────────────
-    path('api/health/', api.health, name='api_health'),
+    path('api/health/', api.health,          name='api_health'),
+    path('api/ticker/', api.district_ticker, name='api_ticker'),
 
     # ── API: 주소 모드 ─────────────────────────────────────
     path('api/address/candidates/', api.address_candidates, name='api_address_candidates'),

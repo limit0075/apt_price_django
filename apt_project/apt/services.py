@@ -148,7 +148,7 @@ def build_price_series(items: list[dict]):
         ym = str(date)[:7]  # YYYY-MM
         grouped[ym].append(float(price))
     result = [
-        {'date': ym, 'avgPrice': round(sum(prices) / len(prices))}
+        {'date': ym, 'avgPrice': round(sum(prices) / len(prices)), 'volume': len(prices)}
         for ym, prices in grouped.items()
     ]
     result.sort(key=lambda x: x['date'])
@@ -383,6 +383,68 @@ def normalize_filter_base_for_complex(
 
 
 # ──────────────────────────────────────────────────────────────
+# 구별 평균가 ticker 서비스
+# ──────────────────────────────────────────────────────────────
+
+def svc_district_ticker(City: str, start_date: str, end_date: str) -> dict:
+    """구별 평균 실거래가 및 월 변동률 — ticker용"""
+    city_df = get_city_area_price(City, start_date, end_date)
+    if city_df is None or city_df.empty:
+        return {'ok': True, 'items': []}
+
+    if '_district' not in city_df.columns:
+        return {'ok': True, 'items': []}
+
+    price_col = '거래금액_원' if '거래금액_원' in city_df.columns else '거래금액'
+    date_col  = '계약날짜'    if '계약날짜'    in city_df.columns else None
+
+    items = []
+    for district, grp in city_df.groupby('_district'):
+        if price_col == '거래금액_원':
+            prices = grp[price_col].dropna().tolist()
+            prices = [float(p) for p in prices if p is not None]
+        else:
+            prices = [normalize_price_to_won(v) for v in grp[price_col].dropna()]
+            prices = [p for p in prices if p is not None]
+
+        if not prices:
+            continue
+
+        avg_won = round(sum(prices) / len(prices))
+
+        # 월 변동률: 마지막 두 달 비교
+        change = None
+        if date_col and date_col in grp.columns:
+            grp2 = grp.copy()
+            grp2['_ym'] = grp2[date_col].astype(str).str[:7]
+            monthly = {}
+            for ym, mgrp in grp2.groupby('_ym'):
+                if price_col == '거래금액_원':
+                    mp = mgrp[price_col].dropna().tolist()
+                    mp = [float(p) for p in mp if p is not None]
+                else:
+                    mp = [normalize_price_to_won(v) for v in mgrp[price_col].dropna()]
+                    mp = [p for p in mp if p is not None]
+                if mp:
+                    monthly[ym] = sum(mp) / len(mp)
+
+            months = sorted(monthly.keys())
+            if len(months) >= 2:
+                prev, last = monthly[months[-2]], monthly[months[-1]]
+                if prev > 0:
+                    change = round((last - prev) / prev * 100, 1)
+
+        items.append({
+            'district': district,
+            'avgPrice': avg_won,
+            'change':   change,
+        })
+
+    items.sort(key=lambda x: x['avgPrice'], reverse=True)
+    return {'ok': True, 'items': items}
+
+
+# ──────────────────────────────────────────────────────────────
 # 주변 시설 / 임장 블로그 서비스
 # ──────────────────────────────────────────────────────────────
 
@@ -540,7 +602,7 @@ def svc_address_results(body: dict):
 
     compare = build_compare_series(items)
     target_areas = [s['area'] for s in compare]
-    city_base = get_city_area_price(City, start_date, end_date)
+    city_base = _city_cache.get((City, start_date, end_date), pd.DataFrame())
     return {
         'ok': True,
         'items': items,
@@ -583,18 +645,37 @@ def svc_filter_list(body: dict):
     if df_list is None or df_list.empty:
         return {'ok': True, 'items': []}
 
+    import re as _re
+    import math as _math
+
+    def _clean(v):
+        if isinstance(v, float) and not _math.isfinite(v):
+            return None
+        if hasattr(v, 'isoformat'):
+            return str(v)[:10]
+        return v
+
     out = []
     for _, r in df_list.iterrows():
-        row = r.to_dict()
-        for k, v in row.items():
-            if hasattr(v, 'isoformat'):
-                row[k] = str(v)[:10]
+        row = {k: _clean(v) for k, v in r.to_dict().items()}
+
+        # 세대수: 숫자만 추출 (예: "1234세대" → 1234)
+        세대수_raw = str(row.get('세대수') or '')
+        세대수_digits = _re.sub(r'[^\d]', '', 세대수_raw)
+        세대수_num = int(세대수_digits) if 세대수_digits else None
+
+        # 최저거래가: 억 단위 → 만원 단위 (프론트 formatManwon이 만원 기대)
+        억 = row.get('최저거래가_억')
+        최저거래가_만 = int(float(억) * 10000) if 억 is not None else None
+
         out.append({
             **row,
             'label':       row.get('단지명') or '',
             'name':        row.get('단지명') or '',
             'roadAddress': row.get('대표도로명주소') or '',
             'zipNo':       row.get('대표우편번호') or '',
+            '세대수':      세대수_num,
+            '최저거래가':  최저거래가_만,
         })
 
     from . import fetch_nearby
@@ -706,7 +787,7 @@ def svc_filter_detail_results(body: dict):
 
     compare = build_compare_series(items)
     target_areas = [s['area'] for s in compare]
-    city_base = get_city_area_price(City, start_date, end_date)
+    city_base = _city_cache.get((City, start_date, end_date), pd.DataFrame())
     return {
         'ok': True,
         'items': items,
