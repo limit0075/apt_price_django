@@ -28,13 +28,13 @@ export const StatTile = ({
         className,
       )}
     >
-      <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+      <div className="text-xs text-muted-foreground">
         {label}
       </div>
       <div className="mt-1 flex items-baseline gap-2">
         <span
           className={cn(
-            "font-mono font-semibold tabular-nums tracking-tight text-foreground",
+            "font-semibold tabular-nums tracking-tight text-foreground",
             large ? "text-2xl" : "text-lg",
             accent && "gradient-text",
           )}

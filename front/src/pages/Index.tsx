@@ -50,10 +50,10 @@ const Index = () => {
         {/* Base params + page banner */}
         <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-primary">
-              {mode === "address" ? "Address Lookup" : "Filter Discovery"}
+            <div className="text-sm font-medium text-primary">
+              {mode === "address" ? "주소 검색" : "조건 검색"}
             </div>
-            <h2 className="mt-1 text-2xl font-semibold tracking-tight">
+            <h2 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
               {mode === "address"
                 ? "단지를 정확히 찾고, 가격을 깊게 분석합니다"
                 : "원하는 가격·세대 조건의 단지를 한 번에 찾습니다"}
@@ -61,8 +61,8 @@ const Index = () => {
           </div>
 
           {/* Query params */}
-          <div className="flex flex-wrap items-center gap-3 rounded-sm border border-border bg-surface px-4 py-2">
-            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card px-4 py-2 shadow-sm">
+            <span className="text-xs text-muted-foreground">
               기준
             </span>
             <ParamInput label="시/도" value={city} onChange={setCity} />

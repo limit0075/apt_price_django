@@ -98,7 +98,7 @@ def geocode_address(address: str):
 
 
 def search_nearby(lat: float, lng: float, category_group_code: str, radius: int = 1000) -> list:
-    """카카오 카테고리 검색 → [{name, distance, address}, ...]"""
+    """카카오 카테고리 검색 → [{name, distance, walkMins, address, lat, lng}, ...]"""
     if not KAKAO_REST_KEY:
         return []
     try:
@@ -119,10 +119,14 @@ def search_nearby(lat: float, lng: float, category_group_code: str, radius: int 
         docs = resp.json().get('documents', [])
         result = []
         for d in docs[:5]:
+            dist_m = int(d.get('distance', 0) or 0)
             result.append({
                 'name':     d.get('place_name', ''),
-                'distance': d.get('distance', ''),
+                'distance': dist_m,
+                'walkMins': max(1, round(dist_m / 67)),  # 도보 4km/h = 67m/분
                 'address':  d.get('road_address_name') or d.get('address_name', ''),
+                'lat':      float(d['y']) if d.get('y') else None,
+                'lng':      float(d['x']) if d.get('x') else None,
             })
         return result
     except Exception as e:
@@ -183,10 +187,10 @@ def fetch_nearby_info(road_address: str, apt_name: str, district: str = '') -> d
 
     if coords:
         lat, lng = coords
-        schools   = search_nearby(lat, lng, _CATEGORY_CODES['schools'])
-        marts     = search_nearby(lat, lng, _CATEGORY_CODES['marts'])
-        hospitals = search_nearby(lat, lng, _CATEGORY_CODES['hospitals'])
-        subways   = search_nearby(lat, lng, _CATEGORY_CODES['subways'])
+        schools   = search_nearby(lat, lng, _CATEGORY_CODES['schools'],   radius=1000)
+        marts     = search_nearby(lat, lng, _CATEGORY_CODES['marts'],     radius=2000)
+        hospitals = search_nearby(lat, lng, _CATEGORY_CODES['hospitals'], radius=1000)
+        subways   = search_nearby(lat, lng, _CATEGORY_CODES['subways'],   radius=1500)
 
     dong = _extract_dong(road_address)
     blog_query = ' '.join(filter(None, [district, dong, apt_name, '임장'])) if apt_name else ''

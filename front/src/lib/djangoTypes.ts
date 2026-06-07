@@ -49,6 +49,12 @@ export type DistrictBar = {
   isCurrent?: boolean;
 };
 
+export type AreaComplexBar = {
+  name: string;
+  avgPrice: number;   // 원
+  isCurrent?: boolean;
+};
+
 export type DistrictStats = {
   districtMin: number;  // 원
   districtMax: number;  // 원
@@ -62,6 +68,7 @@ export type AddressResultsData = {
   items: TradeItem[];
   priceSeries: PriceSeries[];
   compareSeries: CompareSeries[];
+  areaComplexBars?: AreaComplexBar[];
   districtBars: DistrictBar[];
   districtCompareSeries?: CompareSeries[];
   aptName: string;
@@ -92,11 +99,30 @@ export type BlogItem = {
   postdate: string;
 };
 
+export type NearbyItem = {
+  name: string;
+  distance: number;   // 미터
+  walkMins: number;   // 도보 분
+  address?: string;
+  lat?: number;
+  lng?: number;
+};
+
 export type NearbyInfo = {
   coords: { lat: number; lng: number } | null;
-  schools: unknown[];
-  marts: unknown[];
-  hospitals: unknown[];
-  subways: unknown[];
+  schools: NearbyItem[];
+  marts: NearbyItem[];
+  hospitals: NearbyItem[];
+  subways: NearbyItem[];
   blogs: BlogItem[];
+};
+
+export type SubwayPeerItem = {
+  name: string;
+  subwayDist: number;    // 미터
+  pricePerPyeong: number; // 만원/평
+  avgPrice: number;      // 원
+  isCurrent: boolean;
+  lat?: number;
+  lng?: number;
 };

@@ -138,8 +138,8 @@ def filter_list(request):
     body = _body(request)
     err  = _require_base(body)
     if err: return err
-    if not body.get('max_price'):
-        return JsonResponse({'ok': False, 'error': '필수 파라미터 누락: max_price'}, status=400)
+    if not body.get('max_price') and not body.get('max_pyeong_price'):
+        return JsonResponse({'ok': False, 'error': '필수 파라미터 누락: max_price 또는 max_pyeong_price'}, status=400)
     min_hh = body.get('min_households')
     max_hh = body.get('max_households')
     if min_hh in (None, '') and max_hh in (None, ''):
@@ -176,6 +176,25 @@ def filter_detail_results(request):
         return JsonResponse({'ok': False, 'error': '필수 파라미터 누락: selected_complex, selected_area'}, status=400)
     try:
         data = _run(services.svc_filter_detail_results, body)
+        return JsonResponse(data, encoder=_SafeEncoder)
+    except Exception as e:
+        return _err(e)
+
+
+# ── 역세권 비교 ───────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def subway_peer(request):
+    body = _body(request)
+    err  = _require_base(body)
+    if err: return err
+    if not body.get('selected_complex') or body.get('selected_area') is None:
+        return JsonResponse({'ok': False, 'error': '필수 파라미터 누락: selected_complex, selected_area'}, status=400)
+    if not body.get('subway_lat') or not body.get('subway_lng'):
+        return JsonResponse({'ok': False, 'error': '필수 파라미터 누락: subway_lat, subway_lng'}, status=400)
+    try:
+        data = _run(services.svc_subway_peer, body)
         return JsonResponse(data, encoder=_SafeEncoder)
     except Exception as e:
         return _err(e)

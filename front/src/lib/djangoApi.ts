@@ -6,6 +6,7 @@ import type {
   AddressResultsData,
   FilterListItem,
   NearbyInfo,
+  SubwayPeerItem,
 } from "./djangoTypes";
 
 async function post<T>(path: string, body: object): Promise<T> {
@@ -97,17 +98,19 @@ export async function fetchResults(
 
 export async function fetchFilterList(
   base: BaseParams,
-  maxPrice: number,
+  maxPrice: number | null,
   minHouseholds: number | null,
   maxHouseholds: number | null,
+  maxPyeongPrice: number | null = null,
 ): Promise<FilterListItem[]> {
   const data = await post<{ ok: boolean; items: FilterListItem[] }>(
     "/filter/list/",
     {
       ...base,
-      max_price: maxPrice * 10000,  // 만원 → 원 (parse_price_to_won_scalar expects 원)
+      max_price: maxPrice !== null ? maxPrice * 10000 : null,
       min_households: minHouseholds,
       max_households: maxHouseholds,
+      max_pyeong_price: maxPyeongPrice !== null ? maxPyeongPrice * 10000 : null, // 만원/평 → 원/평
     },
   );
   return data.items ?? [];
@@ -116,9 +119,10 @@ export async function fetchFilterList(
 export async function fetchFilterAreas(
   base: BaseParams,
   complexName: string,
-  maxPrice: number,
+  maxPrice: number | null,
   minHouseholds: number | null,
   maxHouseholds: number | null,
+  maxPyeongPrice: number | null = null,
 ): Promise<{ items: AreaItem[]; roadAddress: string; zipNo: string }> {
   const data = await post<{
     ok: boolean;
@@ -128,9 +132,10 @@ export async function fetchFilterAreas(
   }>("/filter/detail/areas/", {
     ...base,
     selected_complex: complexName,
-    max_price: maxPrice * 10000,
+    max_price: maxPrice !== null ? maxPrice * 10000 : null,
     min_households: minHouseholds,
     max_households: maxHouseholds,
+    max_pyeong_price: maxPyeongPrice !== null ? maxPyeongPrice * 10000 : null,
   });
   return {
     items: data.items ?? [],
@@ -143,18 +148,39 @@ export async function fetchFilterResults(
   base: BaseParams,
   complexName: string,
   area: number,
-  maxPrice: number,
+  maxPrice: number | null,
   minHouseholds: number | null,
   maxHouseholds: number | null,
+  maxPyeongPrice: number | null = null,
 ): Promise<AddressResultsData> {
   return post<AddressResultsData>("/filter/detail/results/", {
     ...base,
     selected_complex: complexName,
     selected_area: area,
-    max_price: maxPrice * 10000,
+    max_price: maxPrice !== null ? maxPrice * 10000 : null,
     min_households: minHouseholds,
     max_households: maxHouseholds,
+    max_pyeong_price: maxPyeongPrice !== null ? maxPyeongPrice * 10000 : null,
   });
+}
+
+export async function fetchSubwayPeer(
+  base: BaseParams,
+  complexName: string,
+  area: number,
+  roadAddress: string,
+  subwayLat: number,
+  subwayLng: number,
+): Promise<SubwayPeerItem[]> {
+  const data = await post<{ ok: boolean; items: SubwayPeerItem[] }>("/subway_peer/", {
+    ...base,
+    selected_complex: complexName,
+    selected_area: area,
+    road_address: roadAddress,
+    subway_lat: subwayLat,
+    subway_lng: subwayLng,
+  });
+  return data.items ?? [];
 }
 
 export async function fetchNearbyInfo(

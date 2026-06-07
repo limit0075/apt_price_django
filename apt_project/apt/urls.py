@@ -23,4 +23,7 @@ urlpatterns = [
 
     # ── API: 주변 시설 / 임장 블로그 ───────────────────────
     path('api/nearby/', api.nearby_info, name='api_nearby_info'),
+
+    # ── API: 역세권 비교 ─────────────────────────────────────
+    path('api/subway_peer/', api.subway_peer, name='api_subway_peer'),
 ]

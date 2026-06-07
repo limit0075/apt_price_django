@@ -896,8 +896,9 @@ def list_apt_under_price_and_households(
     min_households: int | None = None,
     max_trade_units: int = 4000,
     min_name_similarity: float = 0.55,
+    max_pyeong_price=None,  # 원/평 (1평 = 3.3058㎡). None이면 필터 미적용
 ):
-    max_price_won = parse_price_to_won_scalar(max_price)
+    max_price_won = parse_price_to_won_scalar(max_price) if max_price is not None else None
     trade = area_price(City, District, start_date, end_date)
     if trade.empty:
         print("실거래 데이터가 없습니다.")
@@ -915,7 +916,12 @@ def list_apt_under_price_and_households(
             건축년도=("건축년도", "max"),
          ))
 
-    g = g[g["최저거래가_원"] <= max_price_won].copy()
+    if max_price_won is not None:
+        g = g[g["최저거래가_원"] <= max_price_won].copy()
+    if max_pyeong_price is not None:
+        # 전용면적_숫자(㎡) → 평 변환 후 평단가 계산
+        g["_평단가"] = g["최저거래가_원"] / (g["전용면적_숫자"] / 3.3058)
+        g = g[g["_평단가"] <= float(max_pyeong_price)].drop(columns=["_평단가"]).copy()
     if g.empty:
         print("조건(가격) 만족 후보가 없습니다.")
         return pd.DataFrame()

@@ -14,7 +14,7 @@ import {
 import { Panel } from "./Panel";
 import { cn } from "@/lib/utils";
 import { formatWonShort } from "@/lib/format";
-import type { PriceSeries, CompareSeries, DistrictBar } from "@/lib/djangoTypes";
+import type { PriceSeries, CompareSeries, DistrictBar, AreaComplexBar } from "@/lib/djangoTypes";
 
 type ChartTab = "timeseries" | "area" | "district";
 
@@ -25,17 +25,17 @@ const tabs: { id: ChartTab; label: string }[] = [
 ];
 
 const tooltipStyle = {
-  backgroundColor: "hsl(222 22% 9%)",
-  border: "1px solid hsl(222 16% 24%)",
-  borderRadius: "4px",
+  backgroundColor: "hsl(0 0% 100%)",
+  border: "1px solid hsl(36 22% 88%)",
+  borderRadius: "8px",
   fontSize: "12px",
-  fontFamily: "JetBrains Mono, monospace",
+  fontFamily: "Inter, system-ui, sans-serif",
   padding: "8px 12px",
-  boxShadow: "0 8px 24px hsl(0 0% 0% / 0.6)",
+  boxShadow: "0 4px 16px hsl(20 15% 11% / 0.10)",
 };
 
 const labelStyle = {
-  color: "hsl(215 14% 58%)",
+  color: "hsl(20 8% 50%)",
   fontSize: "10px",
   textTransform: "uppercase" as const,
   letterSpacing: "0.12em",
@@ -44,16 +44,20 @@ const labelStyle = {
 interface Props {
   priceSeries: PriceSeries[];
   compareSeries: CompareSeries[];
+  areaComplexBars?: AreaComplexBar[];
   districtBars: DistrictBar[];
   aptName: string;
   district: string;
+  aptAvg?: number;
 }
 
 export const PriceCharts = ({
   priceSeries,
   compareSeries,
+  areaComplexBars = [],
   districtBars,
   aptName,
+  aptAvg,
 }: Props) => {
   const [tab, setTab] = useState<ChartTab>("timeseries");
 
@@ -67,6 +71,12 @@ export const PriceCharts = ({
     area: `${Number(s.area).toFixed(2)}㎡`,
     avg: s.avgPrice,
   }));
+
+  type DistrictEntry = { district: string; avgPrice: number; isCurrent?: boolean; isApt?: boolean };
+  const districtData: DistrictEntry[] = aptAvg != null
+    ? [...districtBars, { district: aptName, avgPrice: aptAvg, isApt: true }]
+        .sort((a, b) => a.avgPrice - b.avgPrice)
+    : districtBars;
 
   return (
     <Panel
@@ -102,30 +112,30 @@ export const PriceCharts = ({
             >
               <defs>
                 <linearGradient id="priceFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="hsl(38 96% 56%)" stopOpacity={0.4} />
-                  <stop offset="100%" stopColor="hsl(38 96% 56%)" stopOpacity={0} />
+                  <stop offset="0%" stopColor="hsl(17 64% 57%)" stopOpacity={0.25} />
+                  <stop offset="100%" stopColor="hsl(17 64% 57%)" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid
-                stroke="hsl(222 16% 18%)"
+                stroke="hsl(36 22% 88%)"
                 vertical={false}
                 strokeDasharray="2 4"
               />
               <XAxis
                 dataKey="month"
                 tick={{
-                  fill: "hsl(215 14% 58%)",
+                  fill: "hsl(20 8% 50%)",
                   fontSize: 10,
-                  fontFamily: "JetBrains Mono",
+                  fontFamily: "Inter, system-ui",
                 }}
                 tickLine={false}
-                axisLine={{ stroke: "hsl(222 16% 18%)" }}
+                axisLine={{ stroke: "hsl(36 22% 88%)" }}
               />
               <YAxis
                 tick={{
-                  fill: "hsl(215 14% 58%)",
+                  fill: "hsl(20 8% 50%)",
                   fontSize: 10,
-                  fontFamily: "JetBrains Mono",
+                  fontFamily: "Inter, system-ui",
                 }}
                 tickFormatter={(v) => formatWonShort(v)}
                 tickLine={false}
@@ -136,7 +146,7 @@ export const PriceCharts = ({
                 contentStyle={tooltipStyle}
                 labelStyle={labelStyle}
                 cursor={{
-                  stroke: "hsl(38 96% 56%)",
+                  stroke: "hsl(17 64% 57%)",
                   strokeOpacity: 0.3,
                   strokeDasharray: "3 3",
                 }}
@@ -145,42 +155,59 @@ export const PriceCharts = ({
               <Area
                 type="monotone"
                 dataKey="avg"
-                stroke="hsl(38 96% 56%)"
+                stroke="hsl(17 64% 57%)"
                 strokeWidth={2}
                 fill="url(#priceFill)"
                 activeDot={{
                   r: 4,
-                  stroke: "hsl(222 24% 6%)",
+                  stroke: "hsl(0 0% 100%)",
                   strokeWidth: 2,
-                  fill: "hsl(38 96% 56%)",
+                  fill: "hsl(17 64% 57%)",
                 }}
               />
             </AreaChart>
           ) : tab === "area" ? (
             <BarChart
-              data={areaData}
-              margin={{ top: 10, right: 24, left: 8, bottom: 8 }}
+              data={areaComplexBars}
+              margin={{ top: 10, right: 24, left: 8, bottom: 30 }}
             >
               <CartesianGrid
-                stroke="hsl(222 16% 18%)"
+                stroke="hsl(36 22% 88%)"
                 vertical={false}
                 strokeDasharray="2 4"
               />
               <XAxis
-                dataKey="area"
-                tick={{
-                  fill: "hsl(215 14% 58%)",
-                  fontSize: 10,
-                  fontFamily: "JetBrains Mono",
+                dataKey="name"
+                tick={(props) => {
+                  const { x, y, payload } = props;
+                  const entry = areaComplexBars.find((b) => b.name === payload.value);
+                  const color = entry?.isCurrent ? "hsl(17 64% 57%)" : "hsl(20 8% 50%)";
+                  return (
+                    <g transform={`translate(${x},${y})`}>
+                      <text
+                        x={0} y={0} dy={4}
+                        textAnchor="end"
+                        fill={color}
+                        fontSize={entry?.isCurrent ? 10 : 9}
+                        fontWeight={entry?.isCurrent ? 600 : 400}
+                        fontFamily="Inter, system-ui"
+                        transform="rotate(-40)"
+                      >
+                        {payload.value}
+                      </text>
+                    </g>
+                  );
                 }}
                 tickLine={false}
-                axisLine={{ stroke: "hsl(222 16% 18%)" }}
+                axisLine={{ stroke: "hsl(36 22% 88%)" }}
+                interval={0}
+                height={50}
               />
               <YAxis
                 tick={{
-                  fill: "hsl(215 14% 58%)",
+                  fill: "hsl(20 8% 50%)",
                   fontSize: 10,
-                  fontFamily: "JetBrains Mono",
+                  fontFamily: "Inter, system-ui",
                 }}
                 tickFormatter={(v) => formatWonShort(v)}
                 tickLine={false}
@@ -190,44 +217,67 @@ export const PriceCharts = ({
               <Tooltip
                 contentStyle={tooltipStyle}
                 labelStyle={labelStyle}
-                cursor={{ fill: "hsl(38 96% 56% / 0.06)" }}
-                formatter={(v: number) => [formatWonShort(v), "평균가"]}
+                cursor={{ fill: "hsl(17 64% 57% / 0.06)" }}
+                formatter={(v: number, _n, props) => [
+                  formatWonShort(v),
+                  props.payload?.isCurrent ? "선택 단지" : "구내 단지",
+                ]}
               />
-              <Bar dataKey="avg" radius={[3, 3, 0, 0]}>
-                {areaData.map((_, i) => (
-                  <Cell key={i} fill={`hsl(var(--chart-${(i % 6) + 1}))`} />
+              <Bar dataKey="avgPrice" radius={[4, 4, 0, 0]}>
+                {areaComplexBars.map((b, i) => (
+                  <Cell
+                    key={i}
+                    fill={b.isCurrent ? "hsl(17 64% 57%)" : "hsl(215 15% 78%)"}
+                  />
                 ))}
               </Bar>
             </BarChart>
           ) : (
             <BarChart
-              data={districtBars}
+              data={districtData}
               margin={{ top: 10, right: 24, left: 8, bottom: 30 }}
             >
               <CartesianGrid
-                stroke="hsl(222 16% 18%)"
+                stroke="hsl(36 22% 88%)"
                 vertical={false}
                 strokeDasharray="2 4"
               />
               <XAxis
                 dataKey="district"
-                tick={{
-                  fill: "hsl(215 14% 58%)",
-                  fontSize: 9,
-                  fontFamily: "JetBrains Mono",
+                tick={(props) => {
+                  const { x, y, payload } = props;
+                  const entry = districtData.find((d) => d.district === payload.value);
+                  const color = entry?.isApt
+                    ? "hsl(210 62% 50%)"
+                    : entry?.isCurrent
+                    ? "hsl(17 64% 57%)"
+                    : "hsl(20 8% 50%)";
+                  return (
+                    <g transform={`translate(${x},${y})`}>
+                      <text
+                        x={0} y={0} dy={4}
+                        textAnchor="end"
+                        fill={color}
+                        fontSize={entry?.isApt ? 10 : 9}
+                        fontWeight={entry?.isApt || entry?.isCurrent ? 600 : 400}
+                        fontFamily="Inter, system-ui"
+                        transform="rotate(-40)"
+                      >
+                        {payload.value}
+                      </text>
+                    </g>
+                  );
                 }}
                 tickLine={false}
-                axisLine={{ stroke: "hsl(222 16% 18%)" }}
+                axisLine={{ stroke: "hsl(36 22% 88%)" }}
                 interval={0}
-                angle={-40}
-                textAnchor="end"
                 height={50}
               />
               <YAxis
                 tick={{
-                  fill: "hsl(215 14% 58%)",
+                  fill: "hsl(20 8% 50%)",
                   fontSize: 10,
-                  fontFamily: "JetBrains Mono",
+                  fontFamily: "Inter, system-ui",
                 }}
                 tickFormatter={(v) => formatWonShort(v)}
                 tickLine={false}
@@ -237,17 +287,22 @@ export const PriceCharts = ({
               <Tooltip
                 contentStyle={tooltipStyle}
                 labelStyle={labelStyle}
-                cursor={{ fill: "hsl(38 96% 56% / 0.06)" }}
-                formatter={(v: number) => [formatWonShort(v), "구 평균"]}
+                cursor={{ fill: "hsl(17 64% 57% / 0.06)" }}
+                formatter={(v: number, _n, props) => [
+                  formatWonShort(v),
+                  props.payload?.isApt ? "단지 평균" : "구 평균",
+                ]}
               />
-              <Bar dataKey="avgPrice" radius={[3, 3, 0, 0]}>
-                {districtBars.map((b, i) => (
+              <Bar dataKey="avgPrice" radius={[4, 4, 0, 0]}>
+                {districtData.map((b, i) => (
                   <Cell
                     key={i}
                     fill={
-                      b.isCurrent
-                        ? "hsl(38 96% 56%)"
-                        : "hsl(222 16% 28%)"
+                      b.isApt
+                        ? "hsl(210 62% 50%)"
+                        : b.isCurrent
+                        ? "hsl(17 64% 57%)"
+                        : "hsl(215 15% 78%)"
                     }
                   />
                 ))}

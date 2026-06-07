@@ -1,108 +1,102 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /* ==========================================================================
-   Bloomberg-inspired Premium Dark — Real Estate Analytics Platform
+   Claude.ai-inspired Design — Warm, Minimal, Light
    All colors MUST be HSL.
    ========================================================================== */
 
 @layer base {
   :root {
-    /* Core surfaces — deep institutional black/navy */
-    --background: 222 24% 6%;
-    --foreground: 210 20% 96%;
+    /* Core surfaces — warm cream (Claude background) */
+    --background: 36 35% 96%;
+    --foreground: 20 15% 11%;
 
-    --surface: 222 22% 9%;
-    --surface-elevated: 222 20% 12%;
-    --surface-overlay: 222 18% 15%;
+    --surface: 36 40% 98%;
+    --surface-elevated: 0 0% 100%;
+    --surface-overlay: 36 28% 94%;
 
-    --card: 222 22% 9%;
-    --card-foreground: 210 20% 96%;
+    --card: 0 0% 100%;
+    --card-foreground: 20 15% 11%;
 
-    --popover: 222 20% 11%;
-    --popover-foreground: 210 20% 96%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 20 15% 11%;
 
-    /* Primary — signature amber/gold (Bloomberg signal color) */
-    --primary: 38 96% 56%;
-    --primary-foreground: 222 30% 6%;
-    --primary-glow: 42 100% 64%;
-    --primary-dim: 38 70% 40%;
+    /* Primary — Claude terracotta/orange */
+    --primary: 17 64% 57%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 17 68% 63%;
+    --primary-dim: 17 52% 46%;
 
-    /* Secondary — cool slate */
-    --secondary: 222 18% 16%;
-    --secondary-foreground: 210 18% 88%;
+    /* Secondary — warm light gray */
+    --secondary: 36 20% 93%;
+    --secondary-foreground: 20 15% 11%;
 
-    --muted: 222 16% 13%;
-    --muted-foreground: 215 14% 58%;
+    --muted: 36 18% 93%;
+    --muted-foreground: 20 8% 50%;
 
-    --accent: 222 18% 18%;
-    --accent-foreground: 210 20% 96%;
+    --accent: 36 20% 93%;
+    --accent-foreground: 20 15% 11%;
 
-    /* Financial signal colors */
-    --bull: 142 72% 48%;        /* Green — price up */
+    /* Semantic signal colors — muted for light backgrounds */
+    --bull: 142 44% 38%;
     --bull-foreground: 0 0% 100%;
-    --bear: 0 78% 60%;          /* Red — price down */
+    --bear: 0 60% 48%;
     --bear-foreground: 0 0% 100%;
-    --neutral: 210 12% 60%;
-    --info: 200 90% 56%;        /* Cyan — info / chart */
-    --warning: 38 96% 56%;
+    --neutral: 36 8% 55%;
+    --info: 210 62% 50%;
+    --warning: 36 80% 52%;
 
-    --destructive: 0 78% 58%;
+    --destructive: 0 70% 51%;
     --destructive-foreground: 0 0% 100%;
 
     /* Borders & inputs */
-    --border: 222 18% 18%;
-    --border-strong: 222 16% 24%;
-    --input: 222 20% 12%;
-    --input-border: 222 16% 22%;
-    --ring: 38 96% 56%;
+    --border: 36 22% 88%;
+    --border-strong: 36 20% 80%;
+    --input: 0 0% 100%;
+    --input-border: 36 22% 88%;
+    --ring: 17 64% 57%;
 
-    --radius: 0.5rem;
+    --radius: 0.625rem;
 
-    /* Chart palette — distinct, legible on dark */
-    --chart-1: 38 96% 56%;   /* amber */
-    --chart-2: 200 90% 56%;  /* cyan */
-    --chart-3: 142 72% 48%;  /* green */
-    --chart-4: 280 70% 65%;  /* violet */
-    --chart-5: 340 80% 60%;  /* magenta */
-    --chart-6: 24 90% 60%;   /* orange */
+    /* Chart palette — warm, distinct on white */
+    --chart-1: 17 64% 57%;    /* Claude orange */
+    --chart-2: 210 62% 50%;   /* blue */
+    --chart-3: 142 44% 38%;   /* sage green */
+    --chart-4: 270 48% 55%;   /* soft violet */
+    --chart-5: 345 58% 52%;   /* rose */
+    --chart-6: 36 78% 52%;    /* warm amber */
 
     /* Gradients */
-    --gradient-primary: linear-gradient(135deg, hsl(38 96% 56%), hsl(28 92% 50%));
-    --gradient-surface: linear-gradient(180deg, hsl(222 22% 10%), hsl(222 24% 7%));
-    --gradient-glow: radial-gradient(circle at 50% 0%, hsl(38 96% 56% / 0.12), transparent 60%);
-    --gradient-bull: linear-gradient(180deg, hsl(142 72% 48% / 0.25), hsl(142 72% 48% / 0));
-    --gradient-bear: linear-gradient(180deg, hsl(0 78% 60% / 0.25), hsl(0 78% 60% / 0));
-    --gradient-grid: linear-gradient(180deg, hsl(222 24% 6%), hsl(222 22% 8%));
+    --gradient-primary: linear-gradient(135deg, hsl(17 64% 57%), hsl(22 68% 50%));
+    --gradient-surface: linear-gradient(180deg, hsl(36 40% 98%), hsl(36 35% 96%));
+    --gradient-glow: radial-gradient(ellipse 80% 40% at 50% 0%, hsl(17 64% 57% / 0.06), transparent 70%);
+    --gradient-bull: linear-gradient(180deg, hsl(142 44% 38% / 0.12), hsl(142 44% 38% / 0));
+    --gradient-bear: linear-gradient(180deg, hsl(0 60% 48% / 0.12), hsl(0 60% 48% / 0));
+    --gradient-grid: linear-gradient(180deg, hsl(36 35% 96%), hsl(36 30% 95%));
 
-    /* Shadows — sharp, low key */
-    --shadow-elegant: 0 10px 40px -12px hsl(0 0% 0% / 0.6);
-    --shadow-glow: 0 0 32px hsl(38 96% 56% / 0.25);
-    --shadow-panel: 0 1px 0 0 hsl(222 18% 22%) inset, 0 12px 32px -16px hsl(0 0% 0% / 0.8);
-    --shadow-ticker: 0 0 0 1px hsl(38 96% 56% / 0.3), 0 0 24px hsl(38 96% 56% / 0.15);
+    /* Shadows — soft, warm */
+    --shadow-elegant: 0 4px 24px -4px hsl(20 15% 11% / 0.10);
+    --shadow-glow: 0 0 20px hsl(17 64% 57% / 0.18);
+    --shadow-panel: 0 1px 0 hsl(36 22% 88%) inset, 0 2px 12px -4px hsl(20 15% 11% / 0.08);
+    --shadow-ticker: 0 0 0 1px hsl(17 64% 57% / 0.25), 0 0 16px hsl(17 64% 57% / 0.1);
 
     /* Motion */
     --transition-smooth: all 0.24s cubic-bezier(0.4, 0, 0.2, 1);
-    --transition-snap: all 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-snap: all 0.14s cubic-bezier(0.4, 0, 0.2, 1);
 
-    /* Sidebar (kept for shadcn compat) */
-    --sidebar-background: 222 24% 7%;
-    --sidebar-foreground: 210 18% 88%;
-    --sidebar-primary: 38 96% 56%;
-    --sidebar-primary-foreground: 222 30% 6%;
-    --sidebar-accent: 222 18% 14%;
-    --sidebar-accent-foreground: 210 20% 96%;
-    --sidebar-border: 222 16% 18%;
-    --sidebar-ring: 38 96% 56%;
-  }
-
-  /* Light mode kept minimal — product is dark-first. */
-  .light {
-    --background: 210 30% 98%;
-    --foreground: 222 30% 10%;
+    /* Sidebar */
+    --sidebar-background: 36 28% 94%;
+    --sidebar-foreground: 20 15% 11%;
+    --sidebar-primary: 17 64% 57%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 36 22% 90%;
+    --sidebar-accent-foreground: 20 15% 11%;
+    --sidebar-border: 36 22% 88%;
+    --sidebar-ring: 17 64% 57%;
   }
 }
 
@@ -112,18 +106,17 @@
   }
 
   html {
-    color-scheme: dark;
+    color-scheme: light;
   }
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    font-feature-settings: 'cv11', 'ss01', 'ss03';
+    font-family: 'DM Sans', 'Inter', system-ui, -apple-system, sans-serif;
+    font-feature-settings: 'cv11', 'ss01';
     background-image: var(--gradient-glow);
     background-attachment: fixed;
   }
 
-  /* Tabular numerics everywhere by default for financial UIs */
   .num,
   table,
   td,
@@ -132,78 +125,74 @@
   }
 
   ::selection {
-    background: hsl(var(--primary) / 0.3);
+    background: hsl(var(--primary) / 0.18);
     color: hsl(var(--foreground));
   }
 
-  /* Custom scrollbar */
   ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
   }
   ::-webkit-scrollbar-track {
     background: hsl(var(--background));
   }
   ::-webkit-scrollbar-thumb {
     background: hsl(var(--border-strong));
-    border-radius: 6px;
+    border-radius: 8px;
     border: 2px solid hsl(var(--background));
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--muted-foreground) / 0.4);
+    background: hsl(var(--muted-foreground) / 0.5);
   }
 }
 
 @layer components {
   .font-mono {
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-feature-settings: 'zero', 'ss01';
+    font-family: 'DM Mono', ui-monospace, monospace;
   }
 
   /* Panel — primary surface for data blocks */
   .panel {
-    @apply rounded-md border border-border bg-card;
+    @apply rounded-xl border border-border bg-card;
     box-shadow: var(--shadow-panel);
   }
 
   .panel-header {
-    @apply flex items-center justify-between px-4 py-2.5 border-b border-border;
+    @apply flex items-center justify-between px-4 py-3 border-b border-border;
   }
 
   .panel-title {
-    @apply text-[11px] font-mono font-semibold uppercase tracking-[0.14em] text-muted-foreground;
+    @apply text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground;
   }
 
-  /* Ticker tag */
+  /* Tag chip */
   .ticker {
-    @apply font-mono text-[10px] uppercase tracking-[0.18em] px-1.5 py-0.5 rounded-sm;
+    @apply text-[10px] font-medium uppercase tracking-[0.14em] px-2 py-0.5 rounded-full;
   }
 
-  /* Bull / Bear colors helpers */
+  /* Bull / Bear color helpers */
   .text-bull { color: hsl(var(--bull)); }
   .text-bear { color: hsl(var(--bear)); }
   .bg-bull { background-color: hsl(var(--bull)); }
   .bg-bear { background-color: hsl(var(--bear)); }
 
-  /* Subtle grid background */
+  /* Subtle dot grid — light version */
   .bg-grid {
     background-image:
-      linear-gradient(hsl(var(--border) / 0.5) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(var(--border) / 0.5) 1px, transparent 1px);
-    background-size: 32px 32px;
+      radial-gradient(circle, hsl(var(--border-strong) / 0.6) 1px, transparent 1px);
+    background-size: 24px 24px;
   }
 
-  /* Animated underline for nav */
+  /* Nav link */
   .nav-link {
     @apply relative text-sm text-muted-foreground transition-colors hover:text-foreground;
   }
   .nav-link[data-active="true"] {
-    @apply text-foreground;
+    @apply text-foreground font-medium;
   }
   .nav-link[data-active="true"]::after {
     content: '';
-    @apply absolute -bottom-[14px] left-0 right-0 h-px bg-primary;
-    box-shadow: 0 0 12px hsl(var(--primary) / 0.6);
+    @apply absolute -bottom-[14px] left-0 right-0 h-0.5 rounded-full bg-primary;
   }
 
   /* Pulse dot — live indicator */
@@ -213,7 +202,7 @@
   .pulse-dot::after {
     content: '';
     @apply absolute inset-0 rounded-full bg-bull;
-    animation: pulse-ring 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
 }
 
@@ -226,14 +215,18 @@
     background-clip: text;
     color: transparent;
   }
+
+  .transition-snap {
+    transition: var(--transition-snap);
+  }
 }
 
 /* ==========================================================================
    Keyframes
    ========================================================================== */
 @keyframes pulse-ring {
-  0% { transform: scale(1); opacity: 0.7; }
-  80%, 100% { transform: scale(2.4); opacity: 0; }
+  0% { transform: scale(1); opacity: 0.6; }
+  80%, 100% { transform: scale(2.2); opacity: 0; }
 }
 
 @keyframes ticker-scroll {
@@ -247,11 +240,6 @@
 }
 
 @keyframes fade-up {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes glow-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 hsl(var(--primary) / 0.4); }
-  50% { box-shadow: 0 0 24px 4px hsl(var(--primary) / 0.2); }
 }

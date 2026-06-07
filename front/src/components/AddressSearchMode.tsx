@@ -5,6 +5,7 @@ import { StatTile } from "./StatTile";
 import { PriceCharts } from "./PriceCharts";
 import { DistrictGauge } from "./DistrictGauge";
 import { NearbyPanel } from "./NearbyPanel";
+import { SubwayPeerChart } from "./SubwayPeerChart";
 import { cn } from "@/lib/utils";
 import { formatWon, formatWonShort } from "@/lib/format";
 import {
@@ -20,6 +21,8 @@ import type {
   AreaItem,
   AddressResultsData,
 } from "@/lib/djangoTypes";
+
+type SubwayCoord = { lat: number; lng: number; name: string };
 
 type Step = 1 | 2 | 3 | 4;
 
@@ -38,6 +41,7 @@ export const AddressSearchMode = ({ baseParams }: Props) => {
   const [results, setResults] = useState<AddressResultsData | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [subwayCoord, setSubwayCoord] = useState<SubwayCoord | null>(null);
 
   const step: Step = !picked ? 1 : !selectedComplex ? 2 : !selectedArea ? 3 : 4;
 
@@ -111,6 +115,7 @@ export const AddressSearchMode = ({ baseParams }: Props) => {
       if (!picked || !selectedComplex) return;
       setSelectedArea(area);
       setResults(null);
+      setSubwayCoord(null);
       setLoading("results");
       setError(null);
       try {
@@ -340,9 +345,11 @@ export const AddressSearchMode = ({ baseParams }: Props) => {
               <PriceCharts
                 priceSeries={results.priceSeries}
                 compareSeries={results.compareSeries}
+                areaComplexBars={results.areaComplexBars}
                 districtBars={results.districtBars}
                 aptName={results.aptName || selectedComplex || ""}
                 district={baseParams.District}
+                aptAvg={results.districtStats?.aptAvg}
               />
               {results.districtStats && (
                 <DistrictGauge
@@ -376,7 +383,7 @@ export const AddressSearchMode = ({ baseParams }: Props) => {
                         className="border-b border-border/50 transition-snap hover:bg-surface"
                       >
                         <td className="py-2.5 pr-4 font-mono text-[12px]">
-                          {t.dealDate || "—"}
+                          {t.dealDate ? t.dealDate.slice(0, 10) : "—"}
                         </td>
                         <td className="py-2.5 pr-4 font-mono text-[12px]">
                           {t.area != null
@@ -406,7 +413,21 @@ export const AddressSearchMode = ({ baseParams }: Props) => {
               roadAddress={results.roadAddress}
               aptName={results.aptName || selectedComplex || ""}
               district={baseParams.District}
+              onSubwayFound={(lat, lng, name) => setSubwayCoord({ lat, lng, name })}
             />
+
+            {/* 역세권 비교 */}
+            {subwayCoord && selectedArea !== null && (
+              <SubwayPeerChart
+                baseParams={baseParams}
+                complexName={results.aptName || selectedComplex || ""}
+                area={selectedArea}
+                roadAddress={results.roadAddress}
+                subwayLat={subwayCoord.lat}
+                subwayLng={subwayCoord.lng}
+                subwayName={subwayCoord.name}
+              />
+            )}
           </>
         )}
       </main>

@@ -32,27 +32,27 @@ interface Props {
 }
 
 const COLORS = [
-  "hsl(38 96% 56%)",
-  "hsl(199 89% 64%)",
-  "hsl(142 71% 45%)",
-  "hsl(280 85% 70%)",
-  "hsl(0 72% 60%)",
+  "hsl(17 64% 57%)",
+  "hsl(210 62% 50%)",
+  "hsl(142 44% 38%)",
+  "hsl(270 48% 55%)",
+  "hsl(345 58% 52%)",
 ];
 
 const tooltipStyle = {
-  backgroundColor: "hsl(222 22% 9%)",
-  border: "1px solid hsl(222 16% 24%)",
-  borderRadius: "4px",
+  backgroundColor: "hsl(0 0% 100%)",
+  border: "1px solid hsl(36 22% 88%)",
+  borderRadius: "8px",
   fontSize: "12px",
-  fontFamily: "JetBrains Mono, monospace",
+  fontFamily: "Inter, system-ui, sans-serif",
   padding: "8px 12px",
-  boxShadow: "0 8px 24px hsl(0 0% 0% / 0.6)",
+  boxShadow: "0 4px 16px hsl(20 15% 11% / 0.10)",
 };
 
 const axisTick = {
-  fill: "hsl(215 14% 58%)",
+  fill: "hsl(20 8% 50%)",
   fontSize: 10,
-  fontFamily: "JetBrains Mono",
+  fontFamily: "Inter, system-ui",
 };
 
 // Y축 너비와 좌우 margin을 두 차트 동일하게 유지해서 X 격자가 정렬되게 함
@@ -104,7 +104,7 @@ export const ComparePanel = ({ results, error, onRemove }: Props) => {
       <div style={tooltipStyle}>
         <div
           style={{
-            color: "hsl(215 14% 58%)",
+            color: "hsl(20 8% 50%)",
             fontSize: 10,
             textTransform: "uppercase",
             letterSpacing: "0.12em",
@@ -142,7 +142,7 @@ export const ComparePanel = ({ results, error, onRemove }: Props) => {
                 {formatWonShort(price)}
               </span>
               {vol > 0 && (
-                <span style={{ color: "hsl(215 14% 58%)", fontSize: 10 }}>
+                <span style={{ color: "hsl(20 8% 50%)", fontSize: 10 }}>
                   {vol}건
                 </span>
               )}
@@ -229,7 +229,7 @@ export const ComparePanel = ({ results, error, onRemove }: Props) => {
                 margin={{ ...MARGIN }}
               >
                 <CartesianGrid
-                  stroke="hsl(222 16% 18%)"
+                  stroke="hsl(36 22% 88%)"
                   vertical={false}
                   strokeDasharray="2 4"
                 />
@@ -237,7 +237,7 @@ export const ComparePanel = ({ results, error, onRemove }: Props) => {
                 <XAxis
                   dataKey="date"
                   tick={false}
-                  axisLine={{ stroke: "hsl(222 16% 18%)" }}
+                  axisLine={{ stroke: "hsl(36 22% 88%)" }}
                   tickLine={false}
                   height={12}
                 />
@@ -282,7 +282,7 @@ export const ComparePanel = ({ results, error, onRemove }: Props) => {
                 barCategoryGap="30%"
               >
                 <CartesianGrid
-                  stroke="hsl(222 16% 18%)"
+                  stroke="hsl(36 22% 88%)"
                   vertical={false}
                   strokeDasharray="2 4"
                 />
@@ -290,7 +290,7 @@ export const ComparePanel = ({ results, error, onRemove }: Props) => {
                   dataKey="date"
                   tick={axisTick}
                   tickLine={false}
-                  axisLine={{ stroke: "hsl(222 16% 18%)" }}
+                  axisLine={{ stroke: "hsl(36 22% 88%)" }}
                   interval="preserveStartEnd"
                 />
                 <YAxis
@@ -340,7 +340,7 @@ export const ComparePanel = ({ results, error, onRemove }: Props) => {
               margin={{ top: 10, right: 24, left: 8, bottom: 40 }}
             >
               <CartesianGrid
-                stroke="hsl(222 16% 18%)"
+                stroke="hsl(36 22% 88%)"
                 vertical={false}
                 strokeDasharray="2 4"
               />
@@ -348,7 +348,7 @@ export const ComparePanel = ({ results, error, onRemove }: Props) => {
                 dataKey="name"
                 tick={axisTick}
                 tickLine={false}
-                axisLine={{ stroke: "hsl(222 16% 18%)" }}
+                axisLine={{ stroke: "hsl(36 22% 88%)" }}
                 angle={-25}
                 textAnchor="end"
                 height={60}

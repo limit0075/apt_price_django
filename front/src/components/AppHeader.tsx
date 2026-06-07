@@ -84,36 +84,36 @@ export const AppHeader = ({ mode, onModeChange, baseParams }: AppHeaderProps) =>
   const displayed = [...ticker, ...ticker];
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-xl">
+    <header className="sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur-md">
       {/* Top brand row */}
-      <div className="flex h-14 items-center justify-between border-b border-border/60 px-6">
+      <div className="flex h-14 items-center justify-between border-b border-border/50 px-6">
         <div className="flex items-center gap-8">
           <div className="flex items-center gap-2.5">
-            <div className="relative grid h-8 w-8 place-items-center rounded-sm bg-primary text-primary-foreground shadow-glow">
-              <Activity className="h-4 w-4" strokeWidth={2.5} />
+            <div className="relative grid h-8 w-8 place-items-center rounded-lg bg-primary text-primary-foreground">
+              <Activity className="h-4 w-4" strokeWidth={2} />
             </div>
             <div className="flex flex-col leading-none">
-              <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-primary">
+              <span className="text-[11px] text-muted-foreground">
                 부동산 실거래 분석
               </span>
-              <span className="text-[15px] font-semibold tracking-tight">
+              <span className="text-[15px] font-semibold tracking-tight text-foreground">
                 아파트 실거래가 조회
               </span>
             </div>
           </div>
 
-          <nav className="hidden items-center gap-6 md:flex">
+          <nav className="hidden items-center gap-1 md:flex">
             <button
               data-active={mode === "address"}
               onClick={() => onModeChange("address")}
-              className="nav-link font-medium"
+              className="nav-link rounded-lg px-3 py-1.5 hover:bg-muted"
             >
               주소 검색
             </button>
             <button
               data-active={mode === "filter"}
               onClick={() => onModeChange("filter")}
-              className="nav-link font-medium"
+              className="nav-link rounded-lg px-3 py-1.5 hover:bg-muted"
             >
               조건 검색
             </button>
@@ -121,23 +121,23 @@ export const AppHeader = ({ mode, onModeChange, baseParams }: AppHeaderProps) =>
         </div>
 
         <div className="flex items-center gap-4">
-          <div className="hidden items-center gap-2 rounded-sm border border-border bg-surface px-3 py-1.5 sm:flex">
+          <div className="hidden items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 sm:flex">
             <Search className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="font-mono text-[11px] text-muted-foreground">
+            <span className="text-[12px] text-muted-foreground">
               국토교통부 실거래가 API
             </span>
           </div>
           <div className="flex items-center gap-2">
             <span className={refreshing ? "pulse-dot opacity-50" : "pulse-dot"} />
-            <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-              {refreshing ? "갱신 중…" : "Live · 국토부 API"}
+            <span className="text-[12px] text-muted-foreground">
+              {refreshing ? "갱신 중…" : "실시간 · 국토부"}
             </span>
           </div>
         </div>
       </div>
 
       {/* Ticker tape */}
-      <div className="relative h-9 overflow-hidden bg-surface">
+      <div className="relative h-9 overflow-hidden bg-surface/60">
         <div className="flex h-full animate-ticker items-center gap-10 whitespace-nowrap px-6">
           {displayed.map((t, i) => (
             <div key={i} className="flex items-center gap-2 font-mono text-[11px]">

@@ -5,9 +5,12 @@ import { StatTile } from "./StatTile";
 import { PriceCharts } from "./PriceCharts";
 import { DistrictGauge } from "./DistrictGauge";
 import { NearbyPanel } from "./NearbyPanel";
+import { SubwayPeerChart } from "./SubwayPeerChart";
 import { ComparePanel } from "./ComparePanel";
 import type { CompareResult } from "./ComparePanel";
 import { cn } from "@/lib/utils";
+
+type SubwayCoord = { lat: number; lng: number; name: string };
 import { formatWon, formatWonShort, formatManwon } from "@/lib/format";
 import {
   fetchFilterList,
@@ -38,11 +41,20 @@ type CompareEntry = {
   areaError: boolean;
 };
 
+type PriceMode = "total" | "pyeong";
+
 const PRICE_PRESETS = [
   { label: "10억", value: 100000 },
   { label: "20억", value: 200000 },
   { label: "30억", value: 300000 },
   { label: "50억", value: 500000 },
+];
+
+const PYEONG_PRESETS = [
+  { label: "2천만", value: 2000 },
+  { label: "3천만", value: 3000 },
+  { label: "5천만", value: 5000 },
+  { label: "7천만", value: 7000 },
 ];
 
 const HOUSEHOLD_PRESETS = [
@@ -57,8 +69,14 @@ interface Props {
 }
 
 export const FilterSearchMode = ({ baseParams }: Props) => {
-  const [maxPrice, setMaxPrice] = useState(300000);
+  const [priceMode, setPriceMode] = useState<PriceMode>("total");
+  const [maxPrice, setMaxPrice] = useState(300000);           // 만원 단위
+  const [maxPyeongPrice, setMaxPyeongPrice] = useState(3000); // 만원/평 단위
   const [minHouseholds, setMinHouseholds] = useState(1000);
+
+  // 현재 모드에 따라 API에 넘길 값 결정
+  const effectiveMaxPrice = priceMode === "total" ? maxPrice : null;
+  const effectivePyeongPrice = priceMode === "pyeong" ? maxPyeongPrice : null;
 
   // Single-select flow
   const [complexList, setComplexList] = useState<FilterListItem[]>([]);
@@ -69,6 +87,7 @@ export const FilterSearchMode = ({ baseParams }: Props) => {
   const [results, setResults] = useState<AddressResultsData | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [subwayCoord, setSubwayCoord] = useState<SubwayCoord | null>(null);
 
   // Compare mode
   const [compareMode, setCompareMode] = useState(false);
@@ -92,7 +111,7 @@ export const FilterSearchMode = ({ baseParams }: Props) => {
     setCompareEntries([]);
     setCompareData([]);
     try {
-      const items = await fetchFilterList(baseParams, maxPrice, minHouseholds, null);
+      const items = await fetchFilterList(baseParams, effectiveMaxPrice, minHouseholds, null, effectivePyeongPrice);
       setComplexList(items);
       setSearched(true);
       if (items.length === 0) setError("조건에 맞는 단지가 없습니다");
@@ -102,7 +121,7 @@ export const FilterSearchMode = ({ baseParams }: Props) => {
     } finally {
       setLoading(null);
     }
-  }, [baseParams, maxPrice, minHouseholds]);
+  }, [baseParams, effectiveMaxPrice, effectivePyeongPrice, minHouseholds]);
 
   const handlePickComplex = useCallback(
     async (complex: FilterListItem) => {
@@ -113,7 +132,7 @@ export const FilterSearchMode = ({ baseParams }: Props) => {
       setLoading("areas");
       setError(null);
       try {
-        const { items } = await fetchFilterAreas(baseParams, complex.name, maxPrice, minHouseholds, null);
+        const { items } = await fetchFilterAreas(baseParams, complex.name, effectiveMaxPrice, minHouseholds, null, effectivePyeongPrice);
         setAreaList(items);
       } catch (e) {
         setError(e instanceof Error ? e.message : "면적 조회 중 오류가 발생했습니다");
@@ -121,7 +140,7 @@ export const FilterSearchMode = ({ baseParams }: Props) => {
         setLoading(null);
       }
     },
-    [baseParams, maxPrice, minHouseholds],
+    [baseParams, effectiveMaxPrice, effectivePyeongPrice, minHouseholds],
   );
 
   const handlePickArea = useCallback(
@@ -129,10 +148,11 @@ export const FilterSearchMode = ({ baseParams }: Props) => {
       if (!selectedComplex) return;
       setSelectedArea(area);
       setResults(null);
+      setSubwayCoord(null);
       setLoading("results");
       setError(null);
       try {
-        const data = await fetchFilterResults(baseParams, selectedComplex.name, area, maxPrice, minHouseholds, null);
+        const data = await fetchFilterResults(baseParams, selectedComplex.name, area, effectiveMaxPrice, minHouseholds, null, effectivePyeongPrice);
         setResults(data);
       } catch (e) {
         setError(e instanceof Error ? e.message : "결과 조회 중 오류가 발생했습니다");
@@ -140,7 +160,7 @@ export const FilterSearchMode = ({ baseParams }: Props) => {
         setLoading(null);
       }
     },
-    [baseParams, selectedComplex, maxPrice, minHouseholds],
+    [baseParams, selectedComplex, effectiveMaxPrice, effectivePyeongPrice, minHouseholds],
   );
 
   // ── Compare mode handlers ────────────────────────────────────
@@ -181,7 +201,7 @@ export const FilterSearchMode = ({ baseParams }: Props) => {
       ]);
 
       try {
-        const { items } = await fetchFilterAreas(baseParams, complex.name, maxPrice, minHouseholds, null);
+        const { items } = await fetchFilterAreas(baseParams, complex.name, effectiveMaxPrice, minHouseholds, null, effectivePyeongPrice);
         setCompareEntries((prev) =>
           prev.map((e) =>
             e.complex.name === complex.name
@@ -199,7 +219,7 @@ export const FilterSearchMode = ({ baseParams }: Props) => {
         );
       }
     },
-    [compareEntries, baseParams, maxPrice, minHouseholds],
+    [compareEntries, baseParams, effectiveMaxPrice, effectivePyeongPrice, minHouseholds],
   );
 
   // Pick an area for a specific compare entry (null = reset to picker)
@@ -237,9 +257,10 @@ export const FilterSearchMode = ({ baseParams }: Props) => {
           baseParams,
           entry.complex.name,
           entry.area!,
-          maxPrice,
+          effectiveMaxPrice,
           minHouseholds,
           null,
+          effectivePyeongPrice,
         );
         return {
           name: data.aptName || entry.complex.name,
@@ -258,7 +279,7 @@ export const FilterSearchMode = ({ baseParams }: Props) => {
     setCompareData(ok);
     if (failCount) setCompareError(`${failCount}개 단지 조회에 실패했습니다`);
     setCompareLoading(false);
-  }, [compareEntries, baseParams, maxPrice, minHouseholds]);
+  }, [compareEntries, baseParams, effectiveMaxPrice, effectivePyeongPrice, minHouseholds]);
 
   // ── Derived ─────────────────────────────────────────────────
 
@@ -279,35 +300,85 @@ export const FilterSearchMode = ({ baseParams }: Props) => {
       {/* LEFT */}
       <aside className="space-y-5">
         <Panel tag="FILTER" title="조건 입력" bodyClassName="space-y-5 p-4">
-          <div>
-            <div className="mb-2 flex items-center justify-between">
-              <label className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">최대 가격</label>
-              <span className="font-mono text-[12px] font-semibold text-primary">{Math.round(maxPrice / 10000)}억</span>
-            </div>
-            <input type="range" min={50000} max={600000} step={10000} value={maxPrice}
-              onChange={(e) => setMaxPrice(Number(e.target.value))} className="w-full accent-primary" />
-            <div className="mt-2 flex gap-1">
-              {PRICE_PRESETS.map((p) => (
-                <button key={p.value} onClick={() => setMaxPrice(p.value)}
-                  className={cn("flex-1 rounded-sm border border-border px-2 py-1 font-mono text-[10px] transition-snap hover:border-primary/40",
-                    maxPrice === p.value && "border-primary bg-primary/10 text-primary")}>
-                  {p.label}
-                </button>
-              ))}
-            </div>
+          {/* 가격 모드 토글 */}
+          <div className="flex rounded-lg border border-border bg-muted p-0.5">
+            {(["total", "pyeong"] as PriceMode[]).map((m) => (
+              <button
+                key={m}
+                onClick={() => setPriceMode(m)}
+                className={cn(
+                  "flex-1 rounded-md py-1.5 text-xs font-medium transition-snap",
+                  priceMode === m
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {m === "total" ? "아파트 가격" : "평단가"}
+              </button>
+            ))}
           </div>
 
+          {/* 아파트 가격 슬라이더 */}
+          {priceMode === "total" && (
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <label className="text-xs text-muted-foreground">최대 가격</label>
+                <span className="text-sm font-semibold text-primary">{Math.round(maxPrice / 10000)}억</span>
+              </div>
+              <input type="range" min={50000} max={600000} step={10000} value={maxPrice}
+                onChange={(e) => setMaxPrice(Number(e.target.value))} className="w-full accent-primary" />
+              <div className="mt-2 flex gap-1">
+                {PRICE_PRESETS.map((p) => (
+                  <button key={p.value} onClick={() => setMaxPrice(p.value)}
+                    className={cn("flex-1 rounded-md border border-border px-2 py-1 text-xs transition-snap hover:border-primary/40",
+                      maxPrice === p.value && "border-primary bg-primary/10 text-primary")}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 평단가 슬라이더 */}
+          {priceMode === "pyeong" && (
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <label className="text-xs text-muted-foreground">최대 평단가</label>
+                <span className="text-sm font-semibold text-primary">
+                  {maxPyeongPrice >= 10000
+                    ? `${maxPyeongPrice / 10000}억`
+                    : `${(maxPyeongPrice / 1000).toFixed(maxPyeongPrice % 1000 === 0 ? 0 : 1)}천만`}원/평
+                </span>
+              </div>
+              <input type="range" min={500} max={10000} step={100} value={maxPyeongPrice}
+                onChange={(e) => setMaxPyeongPrice(Number(e.target.value))} className="w-full accent-primary" />
+              <div className="mt-2 flex gap-1">
+                {PYEONG_PRESETS.map((p) => (
+                  <button key={p.value} onClick={() => setMaxPyeongPrice(p.value)}
+                    className={cn("flex-1 rounded-md border border-border px-2 py-1 text-xs transition-snap hover:border-primary/40",
+                      maxPyeongPrice === p.value && "border-primary bg-primary/10 text-primary")}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                1평 = 3.3㎡ 기준 · 면적별 최저 거래가로 계산
+              </p>
+            </div>
+          )}
+
+          {/* 세대수 슬라이더 */}
           <div>
             <div className="mb-2 flex items-center justify-between">
-              <label className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">최소 세대수</label>
-              <span className="font-mono text-[12px] font-semibold text-primary">{minHouseholds.toLocaleString()}↑</span>
+              <label className="text-xs text-muted-foreground">최소 세대수</label>
+              <span className="text-sm font-semibold text-primary">{minHouseholds.toLocaleString()}↑</span>
             </div>
             <input type="range" min={100} max={10000} step={100} value={minHouseholds}
               onChange={(e) => setMinHouseholds(Number(e.target.value))} className="w-full accent-primary" />
             <div className="mt-2 flex gap-1">
               {HOUSEHOLD_PRESETS.map((p) => (
                 <button key={p.min} onClick={() => setMinHouseholds(p.min)}
-                  className={cn("flex-1 rounded-sm border border-border px-2 py-1 font-mono text-[10px] transition-snap hover:border-primary/40",
+                  className={cn("flex-1 rounded-md border border-border px-2 py-1 text-xs transition-snap hover:border-primary/40",
                     minHouseholds === p.min && "border-primary bg-primary/10 text-primary")}>
                   {p.label}
                 </button>
@@ -316,7 +387,7 @@ export const FilterSearchMode = ({ baseParams }: Props) => {
           </div>
 
           <button onClick={handleSearch} disabled={loading === "list"}
-            className="w-full rounded-sm bg-primary py-2 font-mono text-[11px] font-semibold uppercase tracking-wider text-primary-foreground transition-snap hover:bg-primary-glow disabled:opacity-50">
+            className="w-full rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition-snap hover:bg-primary-glow disabled:opacity-50">
             {loading === "list" ? "조회 중…" : "단지 목록 조회"}
           </button>
 
@@ -450,9 +521,11 @@ export const FilterSearchMode = ({ baseParams }: Props) => {
                 <PriceCharts
                   priceSeries={results.priceSeries}
                   compareSeries={results.compareSeries}
+                  areaComplexBars={results.areaComplexBars}
                   districtBars={results.districtBars}
                   aptName={results.aptName || selectedComplex?.name || ""}
                   district={baseParams.District}
+                  aptAvg={results.districtStats?.aptAvg}
                 />
                 {results.districtStats && (
                   <DistrictGauge stats={results.districtStats} district={baseParams.District} />
@@ -474,7 +547,7 @@ export const FilterSearchMode = ({ baseParams }: Props) => {
                     <tbody>
                       {results.items.slice(0, 20).map((t, i) => (
                         <tr key={i} className="border-b border-border/50 transition-snap hover:bg-surface">
-                          <td className="py-2.5 pr-4 font-mono text-[12px]">{t.dealDate || "—"}</td>
+                          <td className="py-2.5 pr-4 font-mono text-[12px]">{t.dealDate ? t.dealDate.slice(0, 10) : "—"}</td>
                           <td className="py-2.5 pr-4 font-mono text-[12px]">
                             {t.area != null ? `${Number(t.area).toFixed(2)}㎡` : "—"}
                           </td>
@@ -496,7 +569,20 @@ export const FilterSearchMode = ({ baseParams }: Props) => {
                 roadAddress={results.roadAddress}
                 aptName={results.aptName || selectedComplex?.name || ""}
                 district={baseParams.District}
+                onSubwayFound={(lat, lng, name) => setSubwayCoord({ lat, lng, name })}
               />
+
+              {subwayCoord && selectedArea !== null && (
+                <SubwayPeerChart
+                  baseParams={baseParams}
+                  complexName={results.aptName || selectedComplex?.name || ""}
+                  area={selectedArea}
+                  roadAddress={results.roadAddress}
+                  subwayLat={subwayCoord.lat}
+                  subwayLng={subwayCoord.lng}
+                  subwayName={subwayCoord.name}
+                />
+              )}
             </>
           ) : null
         )}

@@ -171,6 +171,51 @@ def build_district_compare_series(base_df: pd.DataFrame, target_areas: list) -> 
     return result
 
 
+def build_area_complex_bars(district_df: pd.DataFrame, target_area: float, current_complex: str, max_bars: int = 30) -> list:
+    """구 내 동일 면적 단지별 평균 거래금액(원) — 면적별 비교 차트용"""
+    if district_df is None or district_df.empty:
+        return []
+    if '단지명' not in district_df.columns or '전용면적_숫자' not in district_df.columns:
+        return []
+    area_f = float(target_area)
+    subset = district_df[abs(district_df['전용면적_숫자'] - area_f) <= 1.0]
+    if subset.empty:
+        return []
+
+    price_col = '거래금액_원' if '거래금액_원' in subset.columns else '거래금액'
+    current_norm = fetch_data11.merge_complex_name(str(current_complex).strip())
+
+    result = []
+    for complex_name, grp in subset.groupby('단지명'):
+        if price_col == '거래금액_원':
+            prices = [float(p) for p in grp[price_col].dropna() if p is not None]
+        else:
+            prices = [normalize_price_to_won(v) for v in grp[price_col].dropna()]
+            prices = [float(p) for p in prices if p is not None]
+        if not prices:
+            continue
+        name_norm = fetch_data11.merge_complex_name(str(complex_name).strip())
+        result.append({
+            'name':      str(complex_name).strip(),
+            'avgPrice':  round(sum(prices) / len(prices)),
+            'isCurrent': name_norm == current_norm,
+        })
+
+    result.sort(key=lambda x: x['avgPrice'])
+
+    # 단지가 많으면 현재 단지 중심으로 max_bars 개만 추출
+    if len(result) > max_bars:
+        try:
+            idx = next(i for i, r in enumerate(result) if r['isCurrent'])
+        except StopIteration:
+            idx = len(result) // 2
+        half = max_bars // 2
+        start = max(0, min(idx - half, len(result) - max_bars))
+        result = result[start: start + max_bars]
+
+    return result
+
+
 def build_district_bars(city_df: pd.DataFrame, target_area: float, current_district: str) -> list:
     """25개 구별 동일 면적 평균 거래금액(원) — 구별 비교 차트용"""
     if city_df is None or city_df.empty:
@@ -343,12 +388,14 @@ def normalize_filter_base_for_complex(
     City, District, start_date, end_date,
     selected_complex, max_price, min_households, max_households,
     max_trade_units=4000, min_name_similarity=0.55,
+    max_pyeong_price=None,
 ):
     df_list = fetch_data11.list_apt_under_price_and_households(
         City=City, District=District,
         max_price=max_price, start_date=start_date, end_date=end_date,
         max_households=max_households, min_households=min_households,
         max_trade_units=max_trade_units, min_name_similarity=min_name_similarity,
+        max_pyeong_price=max_pyeong_price,
     )
     if df_list is None or df_list.empty:
         return pd.DataFrame(), None, None, None, pd.DataFrame()
@@ -602,12 +649,13 @@ def svc_address_results(body: dict):
 
     compare = build_compare_series(items)
     target_areas = [s['area'] for s in compare]
-    city_base = _city_cache.get((City, start_date, end_date), pd.DataFrame())
+    city_base = get_city_area_price(City, start_date, end_date)
     return {
         'ok': True,
         'items': items,
         'priceSeries':           build_price_series(items),
         'compareSeries':         compare,
+        'areaComplexBars':       build_area_complex_bars(base, float(selected_area), str(selected_complex).strip()),
         'districtCompareSeries': build_district_compare_series(base, target_areas),
         'districtBars':          build_district_bars(city_base, target_areas[0] if target_areas else 0, District),
         'aptName':        str(selected_complex).strip(),
@@ -627,12 +675,14 @@ def svc_filter_list(body: dict):
     District   = body['District']
     start_date = body['start_date']
     end_date   = body['end_date']
-    max_price  = body.get('max_price')
+    max_price  = body.get('max_price')       # 원 단위, None이면 필터 미적용
     min_hh     = body.get('min_households')
     max_hh     = body.get('max_households')
+    max_pp_raw = body.get('max_pyeong_price')  # 원/평, None이면 필터 미적용
 
     min_hh = int(min_hh) if min_hh not in (None, '') else None
     max_hh = int(max_hh) if max_hh not in (None, '') else None
+    max_pyeong_price = float(max_pp_raw) if max_pp_raw not in (None, '') else None
 
     df_list = fetch_data11.list_apt_under_price_and_households(
         City=City, District=District, max_price=max_price,
@@ -640,6 +690,7 @@ def svc_filter_list(body: dict):
         max_households=max_hh, min_households=min_hh,
         max_trade_units=int(body.get('max_trade_units', 4000)),
         min_name_similarity=float(body.get('min_name_similarity', 0.55)),
+        max_pyeong_price=max_pyeong_price,
     )
 
     if df_list is None or df_list.empty:
@@ -702,9 +753,11 @@ def svc_filter_detail_areas(body: dict):
     max_price  = body.get('max_price')
     min_hh     = body.get('min_households')
     max_hh     = body.get('max_households')
+    max_pp_raw = body.get('max_pyeong_price')
 
     min_hh = int(min_hh) if min_hh not in (None, '') else None
     max_hh = int(max_hh) if max_hh not in (None, '') else None
+    max_pyeong_price = float(max_pp_raw) if max_pp_raw not in (None, '') else None
 
     d, rep_road, rep_zip, _, _base = normalize_filter_base_for_complex(
         City=City, District=District,
@@ -713,6 +766,7 @@ def svc_filter_detail_areas(body: dict):
         max_price=max_price, min_households=min_hh, max_households=max_hh,
         max_trade_units=int(body.get('max_trade_units', 4000)),
         min_name_similarity=float(body.get('min_name_similarity', 0.55)),
+        max_pyeong_price=max_pyeong_price,
     )
 
     if d is None or d.empty:
@@ -727,6 +781,126 @@ def svc_filter_detail_areas(body: dict):
     }
 
 
+# ──────────────────────────────────────────────────────────────
+# 역세권 비교 — DB 좌표 캐시 + Haversine
+# ──────────────────────────────────────────────────────────────
+
+def haversine_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    R = 6_371_000
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi    = math.radians(lat2 - lat1)
+    dlambda = math.radians(lng2 - lng1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    return 2 * R * math.asin(math.sqrt(a))
+
+
+def get_complex_coords(complex_name: str, district: str, road_address: str = ''):
+    """DB 캐시 → 카카오 지오코딩 순서로 단지 좌표 반환. DB에 없으면 저장."""
+    from .models import AptCoord
+    from . import fetch_nearby
+    try:
+        obj = AptCoord.objects.get(complex_name=complex_name, district=district)
+        return (obj.lat, obj.lng)
+    except AptCoord.DoesNotExist:
+        pass
+    coords = None
+    if road_address:
+        coords = fetch_nearby.geocode_address(road_address)
+    if coords is None:
+        coords = fetch_nearby.geocode_address(f'{district} {complex_name}')
+    if coords:
+        lat, lng = coords
+        try:
+            AptCoord.objects.get_or_create(
+                complex_name=complex_name,
+                district=district,
+                defaults={'road_address': road_address or '', 'lat': lat, 'lng': lng},
+            )
+        except Exception:
+            pass
+        return coords
+    return None
+
+
+def svc_subway_peer(body: dict):
+    """구 내 동일 면적대 단지별 평단가 vs 지하철 거리 산출."""
+    City             = body['City']
+    District         = body['District']
+    start_date       = body['start_date']
+    end_date         = body['end_date']
+    selected_complex = str(body.get('selected_complex', '')).strip()
+    selected_area    = float(body.get('selected_area', 0))
+    road_address     = str(body.get('road_address', '')).strip()
+    subway_lat       = body.get('subway_lat')
+    subway_lng       = body.get('subway_lng')
+
+    if not subway_lat or not subway_lng:
+        return {'ok': False, 'error': '지하철역 좌표가 필요합니다'}
+    subway_lat = float(subway_lat)
+    subway_lng = float(subway_lng)
+
+    base_df = fetch_data11.area_price(City, District, start_date, end_date)
+    if base_df is None or base_df.empty:
+        return {'ok': True, 'items': []}
+    if '단지명' not in base_df.columns or '전용면적_숫자' not in base_df.columns:
+        return {'ok': True, 'items': []}
+
+    area_f  = float(selected_area)
+    subset  = base_df[abs(base_df['전용면적_숫자'] - area_f) <= 5.0]
+    if subset.empty:
+        return {'ok': True, 'items': []}
+
+    price_col    = '거래금액_원' if '거래금액_원' in subset.columns else '거래금액'
+    pyeong       = area_f / 3.305785
+    current_norm = fetch_data11.merge_complex_name(selected_complex)
+
+    complex_stats: dict = {}
+    for complex_name, grp in subset.groupby('단지명'):
+        if price_col == '거래금액_원':
+            prices = [float(p) for p in grp[price_col].dropna() if p is not None]
+        else:
+            prices = [normalize_price_to_won(v) for v in grp[price_col].dropna()]
+            prices = [float(p) for p in prices if p is not None]
+        if not prices:
+            continue
+        avg_price = sum(prices) / len(prices)
+        addr = ''
+        if '도로명주소' in grp.columns:
+            addrs = grp['도로명주소'].dropna()
+            if not addrs.empty:
+                addr = str(addrs.iloc[0])
+        complex_stats[str(complex_name).strip()] = {
+            'avgPrice':       round(avg_price),
+            'pricePerPyeong': round(avg_price / pyeong / 10000) if pyeong > 0 else 0,  # 만원/평
+            'road_address':   addr,
+        }
+
+    def _process(item):
+        name, stats = item
+        is_current = fetch_data11.merge_complex_name(name) == current_norm
+        addr  = road_address if is_current and road_address else stats['road_address']
+        coords = get_complex_coords(name, District, addr)
+        if not coords:
+            return None
+        lat, lng = coords
+        return {
+            'name':          name,
+            'subwayDist':    round(haversine_distance(lat, lng, subway_lat, subway_lng)),
+            'pricePerPyeong': stats['pricePerPyeong'],
+            'avgPrice':      stats['avgPrice'],
+            'isCurrent':     is_current,
+            'lat':           lat,
+            'lng':           lng,
+        }
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        raw = list(pool.map(_process, complex_stats.items()))
+
+    items = [r for r in raw if r is not None]
+    items.sort(key=lambda x: x['subwayDist'])
+    return {'ok': True, 'items': items}
+
+
 def svc_filter_detail_results(body: dict):
     City       = body['City']
     District   = body['District']
@@ -737,9 +911,11 @@ def svc_filter_detail_results(body: dict):
     max_price  = body.get('max_price')
     min_hh     = body.get('min_households')
     max_hh     = body.get('max_households')
+    max_pp_raw = body.get('max_pyeong_price')
 
     min_hh = int(min_hh) if min_hh not in (None, '') else None
     max_hh = int(max_hh) if max_hh not in (None, '') else None
+    max_pyeong_price = float(max_pp_raw) if max_pp_raw not in (None, '') else None
 
     d, rep_road, rep_zip, target_name, base = normalize_filter_base_for_complex(
         City=City, District=District,
@@ -748,6 +924,7 @@ def svc_filter_detail_results(body: dict):
         max_price=max_price, min_households=min_hh, max_households=max_hh,
         max_trade_units=int(body.get('max_trade_units', 4000)),
         min_name_similarity=float(body.get('min_name_similarity', 0.55)),
+        max_pyeong_price=max_pyeong_price,
     )
 
     if d is None or d.empty:
@@ -787,12 +964,13 @@ def svc_filter_detail_results(body: dict):
 
     compare = build_compare_series(items)
     target_areas = [s['area'] for s in compare]
-    city_base = _city_cache.get((City, start_date, end_date), pd.DataFrame())
+    city_base = get_city_area_price(City, start_date, end_date)
     return {
         'ok': True,
         'items': items,
         'priceSeries':           build_price_series(items),
         'compareSeries':         compare,
+        'areaComplexBars':       build_area_complex_bars(base, use_area, target_name),
         'districtCompareSeries': build_district_compare_series(base, target_areas),
         'districtBars':          build_district_bars(city_base, target_areas[0] if target_areas else 0, District),
         'aptName':        target_name,

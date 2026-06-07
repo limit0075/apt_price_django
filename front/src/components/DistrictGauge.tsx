@@ -40,7 +40,7 @@ export const DistrictGauge = ({
               style={{ width: `${pct}%` }}
             />
             <div
-              className="absolute top-1/2 h-5 w-[2px] -translate-y-1/2 bg-foreground shadow-[0_0_12px_hsl(38_96%_56%)]"
+              className="absolute top-1/2 h-5 w-[2px] -translate-y-1/2 bg-primary shadow-[0_0_8px_hsl(17_64%_57%_/_0.4)]"
               style={{ left: `${pct}%` }}
             />
           </div>
