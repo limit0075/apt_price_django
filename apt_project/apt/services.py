@@ -496,9 +496,9 @@ def svc_district_ticker(City: str, start_date: str, end_date: str) -> dict:
 # ──────────────────────────────────────────────────────────────
 
 def svc_nearby_info(body: dict):
-    road_address = (body.get('roadAddress') or '').strip()
-    apt_name     = (body.get('aptName') or '').strip()
-    district     = (body.get('District') or '').strip()
+    road_address = body.get('roadAddress', '').strip()
+    apt_name     = body.get('aptName', '').strip()
+    district     = body.get('District', '').strip()
     if not road_address and not apt_name:
         return {'ok': False, 'error': '주소 또는 단지명이 필요합니다'}
     from . import fetch_nearby

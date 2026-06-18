@@ -9,9 +9,9 @@
 - **단지 비교** — 조건 모드에서 최대 5개 단지를 선택해 가격 추이 비교 분석
 - **가격 추이 차트** — 월별 평균 거래가 시계열 시각화
 - **구별 비교** — 선택 단지의 평균가가 해당 구 내에서 차지하는 위치(백분위) 표시
-- **주변 시설** — 카카오 로컬 API로 학교·마트·병원·지하철역 조회 + 카카오맵 표시
+- **주변 시설** — 카카오 로컬 API로 학교·마트·병원·지하철역 조회 + Leaflet 지도
 - **임장 블로그** — 네이버 블로그 검색 API로 단지명 관련 포스트 링크 제공
-- **단지 분포 지도** — 조건 모드 결과 단지를 카카오맵으로 시각화
+- **단지 분포 지도** — 조건 모드 결과 단지를 좌표 기반으로 시각화
 
 ## 아키텍처
 
@@ -56,7 +56,7 @@ apt-django/
         │   ├── FilterSearchMode.tsx   # 조건 모드 + 비교 모드
         │   ├── PriceCharts.tsx
         │   ├── DistrictGauge.tsx
-        │   ├── NearbyPanel.tsx        # 주변 시설 + 카카오맵
+        │   ├── NearbyPanel.tsx        # 주변 시설 + Leaflet 지도
         │   └── ComparePanel.tsx       # 단지 비교 차트
         └── lib/
             ├── djangoApi.ts           # Django API 호출
@@ -98,13 +98,6 @@ NAVER_CLIENT_ID=YOUR_ID
 NAVER_CLIENT_SECRET=YOUR_SECRET
 ```
 
-`front/.env` 파일을 `front/` 디렉터리에 생성하고 아래 키를 입력합니다.
-
-```dotenv
-# 카카오 개발자 (developers.kakao.com) — 카카오맵 JS SDK (지도 표시)
-VITE_KAKAO_JS_KEY=YOUR_KEY
-```
-
 ## 실행 방법
 
 ```bash
@@ -129,6 +122,6 @@ npm run dev          # http://localhost:8080
 | 데이터 처리 | pandas, datakart |
 | 프론트엔드 | React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui |
 | 차트 | Recharts |
-| 지도 | 카카오맵 SDK · react-kakao-maps-sdk (주변 시설·단지 분포) |
+| 지도 | Leaflet (주변 시설), 좌표 SVG (단지 분포) |
 | 외부 API | 공공데이터포털, K-apt, 카카오 로컬, 네이버 블로그 |
 | 서빙 | Vite dev server (프론트) + Django runserver (API) |

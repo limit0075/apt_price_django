@@ -1,7 +1,7 @@
 // static/js/pages/AddressMode.js
 import * as api              from '../api/client.js';
 import { callApi, show, hide, hideAll, setError } from '../hooks/useApi.js';
-import { setStep, completeStep } from '../components/StepIndicator.js';
+import { setStep }           from '../components/StepIndicator.js';
 import { CandidateList }     from '../components/CandidateList.js';
 import { MetricCards }       from '../components/MetricCards.js';
 import { DistrictGauge }     from '../components/DistrictGauge.js';
@@ -9,7 +9,7 @@ import { ResultTable }       from '../components/ResultTable.js';
 import { setupChartToggle }  from '../components/PriceChart.js';
 import { NearbyInfo }        from '../components/NearbyInfo.js';
 
-const state = { selectedCand: null, roadAddress: null, zipNo: null, selectedComplex: null, _nearbyPromise: null, _nearbyRendered: false };
+const state = { selectedCand: null, roadAddress: null, zipNo: null, selectedComplex: null };
 
 function getBase() {
   return {
@@ -76,9 +76,6 @@ async function selectCandidate(cand) {
 // ── Step 3: 단지 선택 → 면적 목록 ────────────────────────────
 async function selectComplex(name) {
   state.selectedComplex = name;
-  state._nearbyRendered = false;
-  document.getElementById('nearby-addr').innerHTML = '';
-  state._nearbyPromise = api.nearbyInfo(getBase(), state.roadAddress, name);
   setStep('a', 3);
   show('area-card-addr');
   hide('results-addr');
@@ -109,19 +106,15 @@ async function selectArea(areaVal) {
     onSuccess(data) {
       if (!data.ok) return;
       show('results-addr');
-      completeStep('a');
       MetricCards('metrics-addr', data.items || [], data.aptName || state.selectedComplex, data.roadAddress || state.roadAddress, data.households, data.parking);
       DistrictGauge('district-gauge-addr', data.districtStats || null);
       ResultTable('result-tbody-addr', data.items || []);
       setupChartToggle('chart-toggle-addr', 'price-chart-addr', data.priceSeries || [], data.compareSeries || [], data.districtCompareSeries || [], data.districtBars || []);
 
-      // 단지당 1회만 렌더 (면적을 바꿔도 재렌더 없음)
-      if (!state._nearbyRendered) {
-        state._nearbyRendered = true;
-        state._nearbyPromise
-          .then(nearby => NearbyInfo('nearby-addr', nearby, data.aptName || state.selectedComplex))
-          .catch(e => console.warn('[nearby-addr]', e));
-      }
+      // 주변정보는 비동기로 별도 로드
+      api.nearbyInfo(getBase(), data.roadAddress || state.roadAddress, data.aptName || state.selectedComplex)
+        .then(nearby => NearbyInfo('nearby-addr', nearby, data.aptName || state.selectedComplex))
+        .catch(() => {});
     },
   });
 }

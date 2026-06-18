@@ -1,6 +1,5 @@
-import React, { useState, useCallback, useEffect, useRef } from "react";
-import { Check, X, MapPin } from "lucide-react";
-import { Map as KakaoMap, CustomOverlayMap, useMap, useKakaoLoader } from "react-kakao-maps-sdk";
+import { useState, useCallback } from "react";
+import { Check, MapPin, X } from "lucide-react";
 import { Panel } from "./Panel";
 import { StatTile } from "./StatTile";
 import { PriceCharts } from "./PriceCharts";
@@ -89,11 +88,6 @@ export const FilterSearchMode = ({ baseParams }: Props) => {
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [subwayCoord, setSubwayCoord] = useState<SubwayCoord | null>(null);
-
-  const handleSubwayFound = useCallback(
-    (lat: number, lng: number, name: string) => setSubwayCoord({ lat, lng, name }),
-    [],
-  );
 
   // Compare mode
   const [compareMode, setCompareMode] = useState(false);
@@ -287,32 +281,6 @@ export const FilterSearchMode = ({ baseParams }: Props) => {
     setCompareLoading(false);
   }, [compareEntries, baseParams, effectiveMaxPrice, effectivePyeongPrice, minHouseholds]);
 
-  // ── Fetch progress simulation ────────────────────────────────
-  const [fetchProgress, setFetchProgress] = useState(0);
-  const progressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    if (loading === "results") {
-      setFetchProgress(0);
-      progressTimerRef.current = setInterval(() => {
-        setFetchProgress((prev) => {
-          const next = prev + (95 - prev) * 0.04;
-          return Math.min(next, 94);
-        });
-      }, 600);
-    } else {
-      if (progressTimerRef.current) {
-        clearInterval(progressTimerRef.current);
-        progressTimerRef.current = null;
-      }
-      if (results) setFetchProgress(100);
-      else setFetchProgress(0);
-    }
-    return () => {
-      if (progressTimerRef.current) clearInterval(progressTimerRef.current);
-    };
-  }, [loading, results]);
-
   // ── Derived ─────────────────────────────────────────────────
 
   const lastPrice = results?.priceSeries?.length
@@ -505,20 +473,9 @@ export const FilterSearchMode = ({ baseParams }: Props) => {
         {!compareMode && (
           loading === "results" ? (
             <Panel className="bg-grid">
-              <div className="flex min-h-[200px] flex-col items-center justify-center gap-5 px-10">
+              <div className="flex min-h-[200px] items-center justify-center">
                 <div className="animate-pulse text-sm text-muted-foreground">
                   결과 조회 중… (최초 조회 시 1-2분 소요될 수 있습니다)
-                </div>
-                <div className="w-full max-w-sm space-y-2">
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                    <div
-                      className="h-full rounded-full bg-primary transition-all duration-700 ease-out"
-                      style={{ width: `${fetchProgress}%` }}
-                    />
-                  </div>
-                  <div className="text-right font-mono text-[11px] text-primary">
-                    {Math.round(fetchProgress)}%
-                  </div>
                 </div>
               </div>
             </Panel>
@@ -612,7 +569,7 @@ export const FilterSearchMode = ({ baseParams }: Props) => {
                 roadAddress={results.roadAddress}
                 aptName={results.aptName || selectedComplex?.name || ""}
                 district={baseParams.District}
-                onSubwayFound={handleSubwayFound}
+                onSubwayFound={(lat, lng, name) => setSubwayCoord({ lat, lng, name })}
               />
 
               {subwayCoord && selectedArea !== null && (
@@ -634,27 +591,7 @@ export const FilterSearchMode = ({ baseParams }: Props) => {
   );
 };
 
-/* ── Kakao 지도 자동 bounds 조정 ─────────────────────────── */
-const KakaoBoundsFitter = ({ complexes }: { complexes: FilterListItem[] }) => {
-  const map = useMap();
-  useEffect(() => {
-    const pts = complexes.filter((c) => c.lat && c.lng);
-    if (pts.length === 0) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const km = (window as any).kakao.maps;
-    if (pts.length === 1) {
-      map.setCenter(new km.LatLng(pts[0].lat!, pts[0].lng!));
-      map.setLevel(5);
-      return;
-    }
-    const bounds = new km.LatLngBounds();
-    pts.forEach((c: FilterListItem) => bounds.extend(new km.LatLng(c.lat!, c.lng!)));
-    map.setBounds(bounds);
-  }, [complexes, map]);
-  return null;
-};
-
-/* ── Kakao Map View ────────────────────────────────────────── */
+/* ── Map View ─────────────────────────────────────────────── */
 const MapView = ({
   complexes, selected, compareEntries, onSelect, isLoading,
 }: {
@@ -664,98 +601,47 @@ const MapView = ({
   onSelect: (c: FilterListItem) => void;
   isLoading?: boolean;
 }) => {
-  const [isLoaded, loadError] = useKakaoLoader({
-    appkey: import.meta.env.VITE_KAKAO_JS_KEY ?? "",
-  });
+  const minLat = 37.45, maxLat = 37.65, minLng = 126.85, maxLng = 127.18;
   const mapped = complexes.filter((c) => c.lat && c.lng);
 
   return (
     <Panel tag="MAP" title="단지 분포" subtitle="서울특별시"
       actions={<span className="font-mono text-[10px] text-muted-foreground">{mapped.length} markers</span>}
       bodyClassName="p-0">
-      <div className="relative h-[420px] overflow-hidden rounded-b-md">
-        {isLoading ? (
-          <div className="flex h-full items-center justify-center bg-muted/30">
+      <div className="relative h-[420px] overflow-hidden rounded-b-md bg-grid">
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/[0.04] via-transparent to-info/[0.04]" />
+        {isLoading && (
+          <div className="absolute inset-0 flex items-center justify-center">
             <span className="animate-pulse text-sm text-muted-foreground">조회 중...</span>
           </div>
-        ) : mapped.length === 0 ? (
-          <div className="flex h-full items-center justify-center bg-muted/30">
-            <span className="text-sm text-muted-foreground">좌표 데이터 없음</span>
-          </div>
-        ) : loadError ? (
-          <div className="flex h-full items-center justify-center bg-muted/30">
-            <span className="text-sm text-destructive">지도 로드 실패</span>
-          </div>
-        ) : !isLoaded ? (
-          <div className="flex h-full items-center justify-center bg-muted/30">
-            <span className="animate-pulse text-sm text-muted-foreground">지도 로딩 중...</span>
-          </div>
-        ) : (
-          <KakaoMap
-            center={{ lat: 37.55, lng: 127.0 }}
-            level={7}
-            style={{ height: "100%", width: "100%" }}
-          >
-            <KakaoBoundsFitter complexes={mapped} />
-            {mapped.map((c, i) => {
-              const isSel =
-                selected?.name === c.name ||
-                compareEntries.some((e) => e.complex.name === c.name);
-              return (
-                <React.Fragment key={i}>
-                  <CustomOverlayMap
-                    position={{ lat: c.lat!, lng: c.lng! }}
-                    yAnchor={1}
-                    zIndex={isSel ? 10 : 1}
-                  >
-                    <button
-                      onClick={() => onSelect(c)}
-                      style={{
-                        width: isSel ? "14px" : "10px",
-                        height: isSel ? "14px" : "10px",
-                        borderRadius: "50%",
-                        backgroundColor: isSel ? "#4f46e5" : "#3b82f6",
-                        border: "2px solid white",
-                        boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
-                        cursor: "pointer",
-                        display: "block",
-                        padding: 0,
-                      }}
-                    />
-                  </CustomOverlayMap>
-                  {selected?.name === c.name && (
-                    <CustomOverlayMap
-                      position={{ lat: c.lat!, lng: c.lng! }}
-                      yAnchor={2.6}
-                      zIndex={20}
-                    >
-                      <div
-                        style={{
-                          background: "white",
-                          border: "1px solid #e2e8f0",
-                          borderRadius: "6px",
-                          padding: "6px 10px",
-                          fontSize: "12px",
-                          boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-                          whiteSpace: "nowrap",
-                          pointerEvents: "none",
-                        }}
-                      >
-                        <div style={{ fontWeight: 600 }}>{c.name}</div>
-                        {c.최저거래가 != null && (
-                          <div style={{ color: "#4f46e5" }}>{formatManwon(c.최저거래가)}</div>
-                        )}
-                        {c.roadAddress && (
-                          <div style={{ color: "#94a3b8", fontSize: "11px" }}>{c.roadAddress}</div>
-                        )}
-                      </div>
-                    </CustomOverlayMap>
-                  )}
-                </React.Fragment>
-              );
-            })}
-          </KakaoMap>
         )}
+        {mapped.map((c, i) => {
+          const x = ((c.lng! - minLng) / (maxLng - minLng)) * 100;
+          const y = (1 - (c.lat! - minLat) / (maxLat - minLat)) * 100;
+          const isSel = selected?.name === c.name;
+          const isCompSel = compareEntries.some((e) => e.complex.name === c.name);
+          const hh = parseHH(c.세대수) || 500;
+          const size = Math.max(10, Math.min(28, hh / 400));
+          return (
+            <button key={i} onClick={() => onSelect(c)}
+              className="group absolute -translate-x-1/2 -translate-y-1/2"
+              style={{ left: `${x}%`, top: `${y}%` }}>
+              <div className={cn("rounded-full ring-2 ring-background transition-all",
+                isSel || isCompSel ? "bg-primary shadow-glow" : "bg-info/80 hover:bg-primary")}
+                style={{ width: size, height: size }} />
+              <div className={cn(
+                "absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap rounded-sm border border-border bg-popover px-2 py-1 font-mono text-[10px] shadow-elegant transition-opacity",
+                isSel || isCompSel ? "opacity-100" : "opacity-0 group-hover:opacity-100")}>
+                <div className="font-semibold text-foreground">{c.name}</div>
+                {c.최저거래가 != null && <div className="text-primary">{formatManwon(c.최저거래가)}</div>}
+              </div>
+            </button>
+          );
+        })}
+        <div className="absolute bottom-3 left-3 flex items-center gap-2 rounded-sm border border-border bg-background/80 px-2.5 py-1.5 backdrop-blur-md">
+          <MapPin className="h-3 w-3 text-primary" />
+          <span className="font-mono text-[10px] text-muted-foreground">마커 클릭 → 상세</span>
+        </div>
       </div>
     </Panel>
   );

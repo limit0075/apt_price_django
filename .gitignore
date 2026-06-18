@@ -1,1 +1,20 @@
+.env
 *.env
+
+# IDE 설정
+.idea/
+.vscode/
+
+# Python 캐시
+__pycache__/
+*.pyc
+*.pyo
+
+# Django 관련
+*.sqlite3
+db.sqlite3
+staticfiles/
+media/
+
+# 분석 임시파일
+*.txt  # project_analysis.txt 같은 것들

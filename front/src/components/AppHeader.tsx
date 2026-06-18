@@ -18,31 +18,14 @@ interface AppHeaderProps {
 }
 
 const STATIC_TICKER = [
-  { district: "서초구",   avgPrice: 2870000000, change:  3.1 },
-  { district: "강남구",   avgPrice: 2610000000, change:  2.4 },
-  { district: "송파구",   avgPrice: 2150000000, change:  1.2 },
-  { district: "용산구",   avgPrice: 2050000000, change:  1.8 },
-  { district: "성동구",   avgPrice: 1720000000, change:  1.5 },
-  { district: "마포구",   avgPrice: 1680000000, change:  0.9 },
-  { district: "강동구",   avgPrice: 1580000000, change:  1.2 },
-  { district: "광진구",   avgPrice: 1420000000, change:  0.7 },
-  { district: "영등포구", avgPrice: 1360000000, change:  0.5 },
-  { district: "동작구",   avgPrice: 1310000000, change:  0.6 },
-  { district: "양천구",   avgPrice: 1220000000, change:  0.3 },
-  { district: "강서구",   avgPrice: 1110000000, change:  0.2 },
-  { district: "중구",     avgPrice: 1080000000, change:  0.4 },
-  { district: "종로구",   avgPrice: 1060000000, change:  0.1 },
-  { district: "은평구",   avgPrice: 1050000000, change: -0.4 },
-  { district: "서대문구", avgPrice: 1010000000, change:  0.2 },
-  { district: "동대문구", avgPrice:  960000000, change: -0.1 },
-  { district: "성북구",   avgPrice:  910000000, change: -0.2 },
-  { district: "관악구",   avgPrice:  810000000, change: -0.3 },
-  { district: "노원구",   avgPrice:  820000000, change: -0.6 },
-  { district: "구로구",   avgPrice:  860000000, change: -0.1 },
-  { district: "중랑구",   avgPrice:  760000000, change: -0.5 },
-  { district: "도봉구",   avgPrice:  750000000, change: -0.7 },
-  { district: "강북구",   avgPrice:  710000000, change: -0.8 },
-  { district: "금천구",   avgPrice:  700000000, change: -0.4 },
+  { district: "서초구",  avgPrice: 2870000000, change: 3.1 },
+  { district: "강남구",  avgPrice: 2610000000, change: 2.4 },
+  { district: "송파구",  avgPrice: 2150000000, change: 1.2 },
+  { district: "용산구",  avgPrice: 2050000000, change: 1.8 },
+  { district: "마포구",  avgPrice: 1680000000, change: 0.9 },
+  { district: "은평구",  avgPrice: 1050000000, change: -0.4 },
+  { district: "강동구",  avgPrice: 1580000000, change: 1.2 },
+  { district: "노원구",  avgPrice:  820000000, change: -0.6 },
 ];
 
 const CACHE_KEY = "apt_ticker_v1";
@@ -99,7 +82,6 @@ export const AppHeader = ({ mode, onModeChange, baseParams }: AppHeaderProps) =>
   }, [cacheKey]);
 
   const displayed = [...ticker, ...ticker];
-  const tickerDuration = `${ticker.length * 3}s`;
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur-md">
@@ -156,7 +138,7 @@ export const AppHeader = ({ mode, onModeChange, baseParams }: AppHeaderProps) =>
 
       {/* Ticker tape */}
       <div className="relative h-9 overflow-hidden bg-surface/60">
-        <div className="flex h-full animate-ticker items-center gap-10 whitespace-nowrap px-6" style={{ animationDuration: tickerDuration }}>
+        <div className="flex h-full animate-ticker items-center gap-10 whitespace-nowrap px-6">
           {displayed.map((t, i) => (
             <div key={i} className="flex items-center gap-2 font-mono text-[11px]">
               <span className="text-muted-foreground">{t.district}</span>

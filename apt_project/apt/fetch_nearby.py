@@ -154,7 +154,7 @@ def search_naver_blog(query: str, display: int = 5,
         result = []
         for it in items:
             title = _strip_html(it.get('title', ''))
-            if not title:
+            if '임장' not in title:
                 continue
             result.append({
                 'title':       title,
