@@ -61,6 +61,13 @@ export const filterDetailAreas = (base, complexName, maxPrice, minHH, maxHH) =>
 export const filterDetailResults = (base, complexName, area, maxPrice, minHH, maxHH) =>
   request('/api/filter/detail/results/', { ...base, selected_complex: complexName, selected_area: area, max_price: maxPrice, min_households: minHH ?? null, max_households: maxHH ?? null });
 
-// 주변 시설 / 임장 블로그
-export const nearbyInfo = (base, roadAddress, aptName) =>
-  request('/api/nearby/', { ...base, roadAddress, aptName });
+// 주변 시설 / 임장 블로그 — 같은 (roadAddress, aptName)이면 진행 중 요청 포함 캐시 반환
+const _nearbyCache = new Map();
+
+export function nearbyInfo(base, roadAddress, aptName) {
+  const key = `${roadAddress}||${aptName}`;
+  if (_nearbyCache.has(key)) return _nearbyCache.get(key);
+  const promise = request('/api/nearby/', { ...base, roadAddress, aptName });
+  _nearbyCache.set(key, promise);
+  return promise;
+}

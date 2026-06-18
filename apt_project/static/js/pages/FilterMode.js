@@ -1,7 +1,7 @@
 // static/js/pages/FilterMode.js
 import * as api              from '../api/client.js';
 import { callApi, show, hide, hideAll, setError } from '../hooks/useApi.js';
-import { setStep }           from '../components/StepIndicator.js';
+import { setStep, completeStep } from '../components/StepIndicator.js';
 import { CandidateList }     from '../components/CandidateList.js';
 import { MetricCards }       from '../components/MetricCards.js';
 import { DistrictGauge }     from '../components/DistrictGauge.js';
@@ -10,7 +10,7 @@ import { setupChartToggle }  from '../components/PriceChart.js';
 import { NearbyInfo }        from '../components/NearbyInfo.js';
 import { FilterListMap }     from '../components/FilterListMap.js';
 
-const state = { maxPrice: '', minHouseholds: null, maxHouseholds: null, selectedComplex: null, roadAddress: null, zipNo: null };
+const state = { maxPrice: '', minHouseholds: null, maxHouseholds: null, selectedComplex: null, roadAddress: null, zipNo: null, _nearbyPromise: null, _nearbyRendered: false };
 
 function getBase() {
   return {
@@ -88,6 +88,9 @@ async function selectComplex(name) {
     onSuccess(data) {
       if (data.roadAddress) state.roadAddress = data.roadAddress;
       if (data.zipNo)       state.zipNo       = data.zipNo;
+      state._nearbyRendered = false;
+      document.getElementById('nearby-filter').innerHTML = '';
+      state._nearbyPromise = api.nearbyInfo(getBase(), state.roadAddress || '', name);
       if (!data.ok || !data.items?.length) {
         document.getElementById('area-list-filter').innerHTML = '<div class="empty">면적 정보를 찾지 못했습니다.</div>';
         return;
@@ -111,15 +114,19 @@ async function selectArea(areaVal) {
     onSuccess(data) {
       if (!data.ok) return;
       show('results-filter');
+      completeStep('f');
       MetricCards('metrics-filter', data.items || [], data.aptName || state.selectedComplex, data.roadAddress || state.roadAddress, data.households, data.parking);
       DistrictGauge('district-gauge-filter', data.districtStats || null);
       ResultTable('result-tbody-filter', data.items || []);
       setupChartToggle('chart-toggle-filter', 'price-chart-filter', data.priceSeries || [], data.compareSeries || [], data.districtCompareSeries || [], data.districtBars || []);
 
-      // 주변정보는 비동기로 별도 로드
-      api.nearbyInfo(getBase(), data.roadAddress || state.roadAddress, data.aptName || state.selectedComplex)
-        .then(nearby => NearbyInfo('nearby-filter', nearby, data.aptName || state.selectedComplex))
-        .catch(() => {});
+      // 단지당 1회만 렌더 (면적을 바꿔도 재렌더 없음)
+      if (!state._nearbyRendered) {
+        state._nearbyRendered = true;
+        state._nearbyPromise
+          .then(nearby => NearbyInfo('nearby-filter', nearby, data.aptName || state.selectedComplex))
+          .catch(e => console.warn('[nearby-filter]', e));
+      }
     },
   });
 }

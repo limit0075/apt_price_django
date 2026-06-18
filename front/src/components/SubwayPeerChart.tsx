@@ -215,9 +215,9 @@ export const SubwayPeerChart = ({
           )}
 
           {/* ── 산점도 ──────────────────────────────────────── */}
-          <div className="h-[280px] w-full">
+          <div className="h-[300px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <ScatterChart margin={{ top: 8, right: 24, left: 8, bottom: 28 }}>
+              <ScatterChart margin={{ top: 24, right: 32, left: 8, bottom: 40 }}>
                 <CartesianGrid stroke="hsl(36 22% 88%)" strokeDasharray="2 4" />
 
                 <XAxis
@@ -231,7 +231,7 @@ export const SubwayPeerChart = ({
                   label={{
                     value: `← ${subwayName}에서 가까운`,
                     position: "insideBottom",
-                    offset: -12,
+                    offset: -20,
                     fontSize: 10,
                     fill: "hsl(20 8% 50%)",
                   }}
@@ -243,7 +243,7 @@ export const SubwayPeerChart = ({
                   tick={{ fill: "hsl(20 8% 50%)", fontSize: 10, fontFamily: "Inter, system-ui" }}
                   tickLine={false}
                   axisLine={false}
-                  width={60}
+                  width={72}
                   tickFormatter={(v: number) => `${v.toLocaleString()}만`}
                 />
 
@@ -283,15 +283,11 @@ export const SubwayPeerChart = ({
                   <ReferenceArea
                     x1={bandX1}
                     x2={bandX2}
-                    fill="hsl(17 64% 57% / 0.07)"
-                    stroke="hsl(17 64% 57% / 0.25)"
+                    fill="hsl(17, 64%, 57%)"
+                    fillOpacity={0.07}
+                    stroke="hsl(17, 64%, 57%)"
+                    strokeOpacity={0.3}
                     strokeDasharray="3 3"
-                    label={{
-                      value: "비교 대역",
-                      position: "insideTop",
-                      fontSize: 9,
-                      fill: "hsl(17 64% 57% / 0.7)",
-                    }}
                   />
                 )}
 
@@ -299,14 +295,14 @@ export const SubwayPeerChart = ({
                 {currentItem && (
                   <ReferenceLine
                     x={currentItem.subwayDist}
-                    stroke="hsl(17 64% 57%)"
+                    stroke="hsl(17, 64%, 57%)"
                     strokeDasharray="4 2"
                     strokeOpacity={0.6}
                     label={{
                       value: complexName,
-                      position: "top",
+                      position: "insideTopRight",
                       fontSize: 9,
-                      fill: "hsl(17 64% 57%)",
+                      fill: "hsl(17, 64%, 57%)",
                     }}
                   />
                 )}
@@ -316,7 +312,7 @@ export const SubwayPeerChart = ({
                   <Scatter
                     data={trendLine}
                     line={{
-                      stroke: "hsl(215 15% 65%)",
+                      stroke: "hsl(215, 15%, 65%)",
                       strokeWidth: 1.5,
                       strokeDasharray: "5 3",
                     }}

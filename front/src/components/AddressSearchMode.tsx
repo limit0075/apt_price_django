@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { ChevronRight, MapPin, Search } from "lucide-react";
 import { Panel } from "./Panel";
 import { StatTile } from "./StatTile";
@@ -43,7 +43,37 @@ export const AddressSearchMode = ({ baseParams }: Props) => {
   const [error, setError] = useState<string | null>(null);
   const [subwayCoord, setSubwayCoord] = useState<SubwayCoord | null>(null);
 
+  const handleSubwayFound = useCallback(
+    (lat: number, lng: number, name: string) => setSubwayCoord({ lat, lng, name }),
+    [],
+  );
+
   const step: Step = !picked ? 1 : !selectedComplex ? 2 : !selectedArea ? 3 : 4;
+
+  const [fetchProgress, setFetchProgress] = useState(0);
+  const progressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (loading === "results") {
+      setFetchProgress(0);
+      progressTimerRef.current = setInterval(() => {
+        setFetchProgress((prev) => {
+          const next = prev + (95 - prev) * 0.04;
+          return Math.min(next, 94);
+        });
+      }, 600);
+    } else {
+      if (progressTimerRef.current) {
+        clearInterval(progressTimerRef.current);
+        progressTimerRef.current = null;
+      }
+      if (results) setFetchProgress(100);
+      else setFetchProgress(0);
+    }
+    return () => {
+      if (progressTimerRef.current) clearInterval(progressTimerRef.current);
+    };
+  }, [loading, results]);
 
   const handleSearch = useCallback(async () => {
     if (!query.trim()) return;
@@ -278,9 +308,20 @@ export const AddressSearchMode = ({ baseParams }: Props) => {
       <main className="min-w-0 space-y-5">
         {loading === "results" ? (
           <Panel className="bg-grid">
-            <div className="flex min-h-[480px] flex-col items-center justify-center">
+            <div className="flex min-h-[480px] flex-col items-center justify-center gap-6 px-10">
               <div className="animate-pulse text-sm text-muted-foreground">
                 데이터 조회 중… (수십 초 소요될 수 있습니다)
+              </div>
+              <div className="w-full max-w-sm space-y-2">
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-primary transition-all duration-700 ease-out"
+                    style={{ width: `${fetchProgress}%` }}
+                  />
+                </div>
+                <div className="text-right font-mono text-[11px] text-primary">
+                  {Math.round(fetchProgress)}%
+                </div>
               </div>
             </div>
           </Panel>
@@ -413,7 +454,7 @@ export const AddressSearchMode = ({ baseParams }: Props) => {
               roadAddress={results.roadAddress}
               aptName={results.aptName || selectedComplex || ""}
               district={baseParams.District}
-              onSubwayFound={(lat, lng, name) => setSubwayCoord({ lat, lng, name })}
+              onSubwayFound={handleSubwayFound}
             />
 
             {/* 역세권 비교 */}
