@@ -1,18 +1,21 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { ChevronRight, MapPin, Search } from "lucide-react";
+import { AptGradePanel } from "./AptGradeBadge";
 import { Panel } from "./Panel";
 import { StatTile } from "./StatTile";
 import { PriceCharts } from "./PriceCharts";
+import { TradesTable } from "./TradesTable";
 import { DistrictGauge } from "./DistrictGauge";
 import { NearbyPanel } from "./NearbyPanel";
 import { SubwayPeerChart } from "./SubwayPeerChart";
 import { cn } from "@/lib/utils";
-import { formatWon, formatWonShort } from "@/lib/format";
+import { formatWonShort } from "@/lib/format";
 import {
   fetchCandidates,
   fetchComplexes,
   fetchAreas,
   fetchResults,
+  fetchDistrictBars,
 } from "@/lib/djangoApi";
 import type {
   BaseParams,
@@ -20,6 +23,7 @@ import type {
   ComplexItem,
   AreaItem,
   AddressResultsData,
+  DistrictBar,
 } from "@/lib/djangoTypes";
 
 type SubwayCoord = { lat: number; lng: number; name: string };
@@ -42,6 +46,8 @@ export const AddressSearchMode = ({ baseParams }: Props) => {
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [subwayCoord, setSubwayCoord] = useState<SubwayCoord | null>(null);
+  const [districtBars, setDistrictBars] = useState<DistrictBar[]>([]);
+  const [districtBarsLoading, setDistrictBarsLoading] = useState(false);
 
   const handleSubwayFound = useCallback(
     (lat: number, lng: number, name: string) => setSubwayCoord({ lat, lng, name }),
@@ -52,6 +58,7 @@ export const AddressSearchMode = ({ baseParams }: Props) => {
 
   const [fetchProgress, setFetchProgress] = useState(0);
   const progressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const districtPollGenRef = useRef(0);
 
   useEffect(() => {
     if (loading === "results") {
@@ -90,8 +97,8 @@ export const AddressSearchMode = ({ baseParams }: Props) => {
       const items = await fetchCandidates(baseParams, query.trim());
       setCandidates(items);
       if (items.length === 0) setError("검색 결과가 없습니다");
-    } catch {
-      setError("주소 검색 중 오류가 발생했습니다");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "주소 검색 중 오류가 발생했습니다");
     } finally {
       setLoading(null);
     }
@@ -110,8 +117,8 @@ export const AddressSearchMode = ({ baseParams }: Props) => {
         const { items } = await fetchComplexes(baseParams, candidate);
         setComplexList(items);
         if (items.length === 0) setError("해당 주소에 단지가 없습니다");
-      } catch {
-        setError("단지 조회 중 오류가 발생했습니다");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "단지 조회 중 오류가 발생했습니다");
       } finally {
         setLoading(null);
       }
@@ -131,8 +138,8 @@ export const AddressSearchMode = ({ baseParams }: Props) => {
       try {
         const items = await fetchAreas(baseParams, picked, complexName);
         setAreaList(items);
-      } catch {
-        setError("면적 조회 중 오류가 발생했습니다");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "면적 조회 중 오류가 발생했습니다");
       } finally {
         setLoading(null);
       }
@@ -146,13 +153,38 @@ export const AddressSearchMode = ({ baseParams }: Props) => {
       setSelectedArea(area);
       setResults(null);
       setSubwayCoord(null);
+      setDistrictBars([]);
+      setDistrictBarsLoading(false);
+      districtPollGenRef.current++;  // 이전 폴링 세션 취소
       setLoading("results");
       setError(null);
       try {
         const data = await fetchResults(baseParams, picked, selectedComplex, area);
         setResults(data);
-      } catch {
-        setError("결과 조회 중 오류가 발생했습니다");
+        // 구별 비교: 백그라운드 패치 완료될 때까지 30초 간격 폴링
+        setDistrictBarsLoading(true);
+        const gen = ++districtPollGenRef.current;
+        const poll = async (attempt = 0) => {
+          if (districtPollGenRef.current !== gen || attempt > 30) {
+            if (districtPollGenRef.current === gen) setDistrictBarsLoading(false);
+            return;
+          }
+          try {
+            const { bars, pending } = await fetchDistrictBars(baseParams, area);
+            if (districtPollGenRef.current !== gen) return;
+            if (!pending) {
+              setDistrictBars(bars);
+              setDistrictBarsLoading(false);
+            } else {
+              setTimeout(() => poll(attempt + 1), 30_000);
+            }
+          } catch {
+            setTimeout(() => poll(attempt + 1), 30_000);
+          }
+        };
+        poll();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "결과 조회 중 오류가 발생했습니다");
       } finally {
         setLoading(null);
       }
@@ -387,67 +419,27 @@ export const AddressSearchMode = ({ baseParams }: Props) => {
                 priceSeries={results.priceSeries}
                 compareSeries={results.compareSeries}
                 areaComplexBars={results.areaComplexBars}
-                districtBars={results.districtBars}
+                districtBars={districtBars}
+                districtBarsLoading={districtBarsLoading}
                 aptName={results.aptName || selectedComplex || ""}
                 district={baseParams.District}
                 aptAvg={results.districtStats?.aptAvg}
+                startDate={baseParams.start_date}
+                endDate={baseParams.end_date}
               />
-              {results.districtStats && (
-                <DistrictGauge
-                  stats={results.districtStats}
-                  district={baseParams.District}
-                />
-              )}
+              <div className="space-y-5">
+                {results.districtStats && (
+                  <DistrictGauge
+                    stats={results.districtStats}
+                    district={baseParams.District}
+                  />
+                )}
+                {results.grade && <AptGradePanel grade={results.grade} />}
+              </div>
             </div>
 
             {/* Trades table */}
-            <Panel
-              tag="LEDGER"
-              title="최근 실거래"
-              subtitle={`${results.items.length}건`}
-            >
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border text-left font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                      <th className="pb-2 pr-4">계약일</th>
-                      <th className="pb-2 pr-4">전용면적</th>
-                      <th className="pb-2 pr-4 text-center">층</th>
-                      <th className="pb-2 pr-4">건축년도</th>
-                      <th className="pb-2 pl-4 text-right">거래가</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {results.items.slice(0, 20).map((t, i) => (
-                      <tr
-                        key={i}
-                        className="border-b border-border/50 transition-snap hover:bg-surface"
-                      >
-                        <td className="py-2.5 pr-4 font-mono text-[12px]">
-                          {t.dealDate ? t.dealDate.slice(0, 10) : "—"}
-                        </td>
-                        <td className="py-2.5 pr-4 font-mono text-[12px]">
-                          {t.area != null
-                            ? `${Number(t.area).toFixed(2)}㎡`
-                            : "—"}
-                        </td>
-                        <td className="py-2.5 pr-4 text-center font-mono text-[12px]">
-                          {t.floor ?? "—"}
-                        </td>
-                        <td className="py-2.5 pr-4 font-mono text-[12px] text-muted-foreground">
-                          {t.buildYear ?? "—"}
-                        </td>
-                        <td className="py-2.5 pl-4 text-right">
-                          <span className="font-mono text-[13px] font-semibold text-foreground">
-                            {t.price != null ? formatWon(t.price) : "—"}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Panel>
+            <TradesTable items={results.items} />
 
             {/* Map + Blog */}
             <NearbyPanel

@@ -1,3 +1,22 @@
+export type AptGradeCriterion = {
+  score: number;
+  max: number;
+  label: string;
+};
+
+export type AptGrade = {
+  grade: 'S' | 'A' | 'B' | 'C' | 'D' | 'N/A';
+  score: number;
+  maxScore: number;
+  normalized: number;
+  breakdown: {
+    price?: AptGradeCriterion;   // 가격 경쟁력
+    infra?: AptGradeCriterion;   // 인프라 접근성
+    size?: AptGradeCriterion;    // 단지 규모
+    volume?: AptGradeCriterion;  // 거래 활성도
+  };
+};
+
 export type BaseParams = {
   City: string;
   District: string;
@@ -76,6 +95,7 @@ export type AddressResultsData = {
   households: number | null;
   parking: string | null;
   districtStats: DistrictStats | null;
+  grade?: AptGrade;
 };
 
 export type FilterListItem = {
@@ -88,6 +108,7 @@ export type FilterListItem = {
   세대수?: number | string;
   최저거래가?: number;  // 만원
   거래건수?: number;
+  grade?: AptGrade;
   [key: string]: unknown;
 };
 

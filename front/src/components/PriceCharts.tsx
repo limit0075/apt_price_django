@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   Area,
   AreaChart,
@@ -46,37 +46,71 @@ interface Props {
   compareSeries: CompareSeries[];
   areaComplexBars?: AreaComplexBar[];
   districtBars: DistrictBar[];
+  districtBarsLoading?: boolean;
   aptName: string;
   district: string;
   aptAvg?: number;
+  startDate?: string;   // YYYYMM
+  endDate?: string;     // YYYYMM
+}
+
+function genMonthRange(start: string, end: string): string[] {
+  const months: string[] = [];
+  let y = parseInt(start.slice(0, 4), 10);
+  let m = parseInt(start.slice(4, 6), 10);
+  const ey = parseInt(end.slice(0, 4), 10);
+  const em = parseInt(end.slice(4, 6), 10);
+  while (y < ey || (y === ey && m <= em)) {
+    months.push(`${y}-${String(m).padStart(2, "0")}`);
+    if (++m > 12) { m = 1; y++; }
+  }
+  return months;
 }
 
 export const PriceCharts = ({
   priceSeries,
-  compareSeries,
+  compareSeries: _compareSeries,
   areaComplexBars = [],
   districtBars,
+  districtBarsLoading = false,
   aptName,
   aptAvg,
+  startDate,
+  endDate,
 }: Props) => {
   const [tab, setTab] = useState<ChartTab>("timeseries");
 
-  // Transform to recharts format
-  const timeseriesData = priceSeries.map((p) => ({
-    month: p.date,
-    avg: p.avgPrice,
-  }));
+  // Build timeseries: full range but trim leading null months so chart starts at first trade
+  const timeseriesData = useMemo(() => {
+    const existing = new Map(priceSeries.map((p) => [p.date, p.avgPrice]));
+    if (startDate && endDate) {
+      const allMonths = genMonthRange(startDate, endDate);
+      const firstIdx = allMonths.findIndex((m) => existing.has(m));
+      const months = firstIdx > 0 ? allMonths.slice(firstIdx) : allMonths;
+      return months.map((month) => ({
+        month,
+        avg: existing.get(month) ?? null,
+      }));
+    }
+    return priceSeries.map((p) => ({ month: p.date, avg: p.avgPrice as number | null }));
+  }, [priceSeries, startDate, endDate]);
 
-  const areaData = compareSeries.map((s) => ({
-    area: `${Number(s.area).toFixed(2)}㎡`,
-    avg: s.avgPrice,
-  }));
+  // Show ~8 tick labels regardless of range length
+  const xTickInterval = timeseriesData.length <= 12
+    ? 0
+    : Math.floor(timeseriesData.length / 8);
 
+  // 구별 비교: 서울 전체 구 평균가 + 내 단지 표시
   type DistrictEntry = { district: string; avgPrice: number; isCurrent?: boolean; isApt?: boolean };
-  const districtData: DistrictEntry[] = aptAvg != null
-    ? [...districtBars, { district: aptName, avgPrice: aptAvg, isApt: true }]
-        .sort((a, b) => a.avgPrice - b.avgPrice)
-    : districtBars;
+  const districtData: DistrictEntry[] = useMemo(
+    () =>
+      aptAvg != null
+        ? [...districtBars, { district: aptName, avgPrice: aptAvg, isApt: true }].sort(
+            (a, b) => a.avgPrice - b.avgPrice,
+          )
+        : districtBars,
+    [districtBars, aptName, aptAvg],
+  );
 
   return (
     <Panel
@@ -104,6 +138,11 @@ export const PriceCharts = ({
       bodyClassName="p-2 pt-4"
     >
       <div className="h-[320px] w-full">
+        {tab === "district" && districtBarsLoading ? (
+          <div className="flex h-full items-center justify-center text-[12px] text-muted-foreground">
+            구별 데이터 조회 중… (수 분 소요될 수 있습니다)
+          </div>
+        ) : (
         <ResponsiveContainer width="100%" height="100%">
           {tab === "timeseries" ? (
             <AreaChart
@@ -130,6 +169,7 @@ export const PriceCharts = ({
                 }}
                 tickLine={false}
                 axisLine={{ stroke: "hsl(36 22% 88%)" }}
+                interval={xTickInterval}
               />
               <YAxis
                 tick={{
@@ -158,6 +198,8 @@ export const PriceCharts = ({
                 stroke="hsl(17 64% 57%)"
                 strokeWidth={2}
                 fill="url(#priceFill)"
+                connectNulls
+                dot={{ r: 3, fill: "hsl(17 64% 57%)", strokeWidth: 0 }}
                 activeDot={{
                   r: 4,
                   stroke: "hsl(0 0% 100%)",
@@ -167,6 +209,7 @@ export const PriceCharts = ({
               />
             </AreaChart>
           ) : tab === "area" ? (
+            /* 면적별 비교: 같은 구·같은 면적의 인근 단지 평균가 비교 */
             <BarChart
               data={areaComplexBars}
               margin={{ top: 10, right: 24, left: 8, bottom: 30 }}
@@ -233,6 +276,7 @@ export const PriceCharts = ({
               </Bar>
             </BarChart>
           ) : (
+            /* 구별 비교: 서울 전체 구 평균가 중 내 단지 위치 확인 */
             <BarChart
               data={districtData}
               margin={{ top: 10, right: 24, left: 8, bottom: 30 }}
@@ -310,6 +354,7 @@ export const PriceCharts = ({
             </BarChart>
           )}
         </ResponsiveContainer>
+        )}
       </div>
     </Panel>
   );

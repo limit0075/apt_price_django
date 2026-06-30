@@ -2,6 +2,337 @@
 
 ---
 
+## 2026-06-30
+
+### [버그수정] 조건검색 지도 패널 "지도 로딩 중..." 고착 현상
+
+**증상**
+카카오 맵 JavaScript SDK 도메인 등록(Kakao 개발자 콘솔 → `http://localhost:8083`) 후에도
+FilterSearchMode의 지도 패널이 "지도 로딩 중..."에서 벗어나지 않음.
+
+**원인**
+`react-kakao-maps-sdk` v1.2.1의 `useKakaoLoader`는 `[isLoading, error]`를 반환함.
+- `isLoading = true`: SDK 로딩 중
+- `isLoading = false`: 로딩 완료
+
+그런데 컴포넌트에서 첫 번째 반환값을 `isLoaded`로 명명하고 `!isLoaded`로 조건 체크하여 로직이 반전됨:
+- SDK 로딩 완료(`isLoaded=false`) → `!isLoaded=true` → "지도 로딩 중..." 표시 (버그)
+
+**수정**
+`front/src/components/FilterSearchMode.tsx` MapView 컴포넌트:
+```
+변경 전: const [isLoaded, loadError] = useKakaoLoader(...)
+         !isLoaded ? <로딩중> : <KakaoMap>
+
+변경 후: const [mapLoading, loadError] = useKakaoLoader(...)
+         mapLoading ? <로딩중> : <KakaoMap>
+```
+
+---
+
+## 2026-06-24
+
+### [검증] 조건검색 end-to-end 플로우 정상 동작 확인
+
+**확인 내용**
+- filter/list: warm cache 기준 3-4초 응답 (cold: 35-40초)
+- 단지 선택 → filter/detail/areas: 1-2초
+- 면적 선택 → filter/detail/results: 5-11초
+- 월별 시계열 차트 정상 렌더링 (leading null 트림 포함)
+- 단지 등급(S/A/B/C/D), GAUGE, LEDGER 모두 정상
+
+**발견 사항**
+이전 200+ 초 지연 측정은 Playwright 테스트 코드 오류였음.
+`time.sleep()` 사용 시 Playwright의 이벤트 루프가 차단되어 응답 이벤트가 늦게 전달되는 것처럼 보임.
+`page.wait_for_timeout()` 사용 시 Django 응답 3-4초 정상 확인.
+
+**정리**
+`fetch_data11.py`, `services.py`에 추가했던 임시 타이밍 로그 코드(`_log`, `django_timing.log`) 제거.
+
+---
+
+## 2026-06-23
+
+---
+
+### [버그] 국토부 MOLIT API 429 Too Many Requests — 최종 수정
+
+**증상**
+성북구 2020-01 ~ 2026-06 (78개월) 조회 시 모든 월에 걸쳐 429 에러가 반복 발생.
+Semaphore 방식으로는 동시성만 제한되고 초당 요청 횟수가 제한되지 않아 해결되지 않았음.
+최악의 경우 10분 이상 대기 후 TimeoutError로 실패.
+
+---
+
+#### 1. `apt_project/apt/fetch_data11.py` — 시간 기반 레이트 리미터 + Circuit Breaker
+
+**원인 분석**
+- 기존 `threading.Semaphore` 방식은 동시 실행 수만 제한하고 초당 호출 빈도는 제어하지 않음
+- data.go.kr은 API 키 단위로 초당 요청 수를 제한하므로, 직렬 호출도 빠르게 반복되면 429가 발생
+- 일일 할당량 초과 시 모든 재시도가 429로 실패 → retry 5회 × 지수 백오프(5→15→45→135s) = 월당 최대 200초 낭비
+
+**수정 내용**
+
+```python
+# 추가 — 모듈 수준 레이트 리미터 변수
+_MOLIT_LOCK    = threading.Lock()
+_MOLIT_LAST_T  = 0.0
+_MOLIT_MIN_GAP = 1.2   # 초당 최대 0.8 요청
+
+def _molit_wait():
+    """전역 잠금으로 최소 호출 간격을 보장하는 레이트 리미터."""
+    global _MOLIT_LAST_T
+    with _MOLIT_LOCK:
+        now = time.time()
+        gap = _MOLIT_MIN_GAP - (now - _MOLIT_LAST_T)
+        if gap > 0:
+            time.sleep(gap)
+        _MOLIT_LAST_T = time.time()
+
+
+class _QuotaExceeded(Exception):
+    """모든 재시도가 429로 실패 — 일일 할당량 초과 신호."""
+
+
+def safe_apt_trade(datago, lawd_cd, ymd, retry=3):
+    all_429 = True
+    for i in range(retry):
+        _molit_wait()
+        try:
+            resp = datago.apt_trade(lawd_cd, ymd)
+            if not resp:
+                return pd.DataFrame()
+            return pd.DataFrame(resp)
+        except Exception as e:
+            is_429 = "429" in str(e) or "Too Many" in str(e)
+            if not is_429:
+                all_429 = False
+            print(f"[ERROR] apt_trade {ymd} ({i+1}/{retry}) -> {e}")
+            if i < retry - 1:
+                wait = 5.0 if is_429 else 1.0 * (2 ** i)
+                time.sleep(wait)
+    if all_429:
+        raise _QuotaExceeded(ymd)   # 할당량 초과 신호 발생
+    return pd.DataFrame()
+```
+
+`area_price` 에 circuit breaker 추가 — 3개월 연속 할당량 초과 시 즉시 중단:
+
+```python
+# 수정 전 — 78개월 전부 시도, 타임아웃으로 실패
+for ymd in dates:
+    df = safe_apt_trade(datago, lawd_cd, ymd)
+    ...
+
+# 수정 후 — circuit breaker
+consecutive_quota = 0
+for ymd in dates:
+    try:
+        df = safe_apt_trade(datago, lawd_cd, ymd)
+    except _QuotaExceeded:
+        consecutive_quota += 1
+        if consecutive_quota >= 3:
+            raise RuntimeError(
+                "국토부 MOLIT API 일일 요청 한도 초과. "
+                "잠시 후 다시 조회하거나 다음 날 시도하세요."
+            )
+        continue
+    consecutive_quota = 0
+    ...
+```
+
+`area_price` 내 월별 `time.sleep(0.25)` 제거 — `_molit_wait()`이 이미 간격을 보장하므로 중복.
+
+---
+
+#### 2. `apt_project/apt/api.py` — Executor 안정성 + 타임아웃 연장
+
+**원인**
+Django `StatReloader`가 코드 변경을 감지해 서버를 재시작할 때, 모듈 수준에서 생성된 `ThreadPoolExecutor` 인스턴스의 `shutdown()` atexit 핸들러가 이미 실행된 상태에서 새 요청이 들어오면 `cannot schedule new futures after interpreter shutdown` 에러가 발생함.
+
+```python
+# 수정 전 — 모듈 임포트 시 1회만 생성
+_executor = concurrent.futures.ThreadPoolExecutor(max_workers=8)
+
+def _run(fn, *args, timeout=300, **kwargs):
+    future = _executor.submit(fn, *args, **kwargs)
+    return future.result(timeout=timeout)
+
+# 수정 후 — 요청 시점에 shutdown 여부를 확인하고 재생성
+import threading
+_executor: concurrent.futures.ThreadPoolExecutor | None = None
+_executor_lock = threading.Lock()
+
+def _get_executor():
+    global _executor
+    if _executor is None or _executor._shutdown:
+        with _executor_lock:
+            if _executor is None or _executor._shutdown:
+                _executor = concurrent.futures.ThreadPoolExecutor(max_workers=8)
+    return _executor
+
+def _run(fn, *args, timeout=600, **kwargs):   # timeout 300s → 600s
+    future = _get_executor().submit(fn, *args, **kwargs)
+    return future.result(timeout=timeout)
+```
+
+---
+
+#### 3. `front/src/components/AddressSearchMode.tsx` — 실제 에러 메시지 전달
+
+**원인**
+`djangoApi.ts`의 `post()` 함수가 `ok: false` 응답을 받으면 `data.error` 텍스트로 `Error`를 throw하는데, 컴포넌트의 catch 블록이 이를 삼키고 일반 메시지만 표시함.
+
+```tsx
+// 수정 전 — API 에러 메시지 무시
+} catch {
+    setError("단지 조회 중 오류가 발생했습니다");
+}
+
+// 수정 후 — 실제 메시지 표시 (예: "국토부 MOLIT API 일일 요청 한도 초과...")
+} catch (err) {
+    setError(err instanceof Error ? err.message : "단지 조회 중 오류가 발생했습니다");
+}
+```
+
+candidates / complexes / areas / results 4개 catch 블록 모두 동일하게 수정.
+
+---
+
+### 검증 결과
+
+| 검증 항목 | 방법 | 결과 |
+|-----------|------|------|
+| 할당량 초과 시 응답 시간 | `curl POST /api/address/complexes/` | **34초** (수정 전: 600초 후 TimeoutError) |
+| 에러 메시지 | 응답 JSON `error` 필드 | **"국토부 MOLIT API 일일 요청 한도 초과. 잠시 후 다시 조회하거나 다음 날 시도하세요."** |
+| Executor 재생성 | Django `--noreload` 재시작 후 `/api/health/` | **200 OK** |
+
+---
+
+---
+
+## 2026-06-22
+
+---
+
+### [버그] 국토부 API `buyerGbn=None` 필터링 오류
+
+**증상**
+2020년 이후 거래 내역이 0건으로 조회되는 단지 발생 (보문파크뷰자이 등).
+2024년 이후 데이터는 정상이나 2020~2023년 구간이 완전히 비어 있었음.
+
+**파일** `apt_project/apt/fetch_data11.py` — `area_price` 함수
+
+**원인**
+국토부 실거래가 API는 2024년 이전 구버전 응답에서 `buyerGbn` 필드를 아예 반환하지 않음.
+기존 필터가 `buyerGbn == "개인"` 인 행만 통과시켜, 구버전 데이터(값이 `None`/`NaN`)를 전부 제거했음.
+
+```python
+# 수정 전 — None/NaN 행 제거
+mask = df["buyerGbn"].astype(str).str.strip() == "개인"
+
+# 수정 후 — None/NaN(구버전 API, 값 미제공)도 통과
+mask = df["buyerGbn"].isna() | (df["buyerGbn"].astype(str).str.strip() == "개인")
+```
+
+### 검증 결과
+
+| 검증 항목 | 결과 |
+|-----------|------|
+| 보문파크뷰자이 2020-01 ~ 2026-06 조회 건수 | **30건** (수정 전: 0건) |
+| 연도별 분포 | 2020년 8건, 2021년 5건, 2022년 7건, 2023년 6건, 2024년~정상 |
+
+---
+
+### [버그] 카카오맵 `LatLng is not a constructor` 에러
+
+**증상**
+MAP 패널 클릭 시 콘솔에 `LatLng is not a constructor` 에러 발생. 지도가 표시되지 않음.
+
+**파일**
+- `front/index.html`
+- `front/vite.config.ts`
+- `front/src/components/NearbyPanel.tsx`
+
+**원인 3단계 분석**
+
+| 단계 | 원인 | 수정 |
+|------|------|------|
+| 1 | Vite 개발 서버 포트가 8080인데, 카카오 콘솔에는 8082만 등록됨 → SDK 로드 차단 | `vite.config.ts` port: 8080 → **8082** |
+| 2 | `//dapi.kakao.com` (protocol-relative URL)이 HTTP 페이지에서 `http://`로 해석 → 카카오 CDN이 HTTPS로 리다이렉트하지만 `<script>`는 리다이렉트 미지원 | `index.html` SDK URL을 `**https://**dapi.kakao.com`으로 변경 |
+| 3 | `loadKakaoSdk()`이 `window.kakao.maps` 네임스페이스가 존재하면 즉시 resolve했으나, `autoload=false` 모드에서는 `kakao.maps.load()` 를 호출해야 비로소 `LatLng` 등 API 객체가 초기화됨 | `typeof window.kakao?.maps?.LatLng === 'function'` 체크 추가, 모든 경로에서 `load()` 호출 보장 |
+
+```typescript
+// 수정 전 — maps 네임스페이스 존재 시 초기화 없이 resolve
+if (window.kakao?.maps) { resolve(); return; }
+
+// 수정 후 — LatLng 가용 여부로 초기화 완료 확인, 아니면 load() 호출
+if (typeof window.kakao?.maps?.LatLng === 'function') { resolve(); return; }
+if (window.kakao?.maps) { window.kakao.maps.load(resolve); return; }
+```
+
+`onSubwayFound` prop을 ref로 저장해 `useEffect` 의존성에서 제외하는 패턴도 함께 적용 (무한 재조회 방지).
+
+### 검증 결과
+
+| 검증 항목 | 결과 |
+|-----------|------|
+| LatLng 준비 여부 | **True** |
+| 지도 타일 렌더링 | 정상 표시 |
+| 마커 표시 | 정상 표시 |
+
+---
+
+### [최적화] 전체 코드 성능 개선
+
+**배경**
+불필요한 리렌더·재계산을 줄여 UI 반응성을 높이고, 정규표현식 반복 컴파일 비용을 제거.
+
+---
+
+#### 1. `front/src/components/ComparePanel.tsx`
+
+- `PriceTooltip` 컴포넌트를 함수 본문 밖으로 이동 → 렌더마다 재생성 방지
+- `allDates`, `merged`, `avgData` 를 `useMemo([results])`로 메모화
+
+#### 2. `front/src/components/PriceCharts.tsx`
+
+- `timeseriesData`, `areaData`, `districtData` 를 `useMemo`로 메모화
+
+#### 3. `front/src/components/TradesTable.tsx`
+
+- `pageItems` 슬라이스를 `useMemo([items, page])`로 메모화
+
+#### 4. `apt_project/apt/fetch_data11.py`
+
+모듈 수준에서 정규표현식 사전 컴파일:
+
+```python
+_RE_WHITESPACE   = re.compile(r"\s+")
+_RE_FLOOR_GROUP  = re.compile(r"\(\s*(고층|저층)\s*\)")
+_RE_PAREN        = re.compile(r"\(.*?\)")
+_RE_NON_ALPHANUM = re.compile(r"[^0-9가-힣]")
+_RE_DIGITS       = re.compile(r"\d+")
+_RE_EOK_PRICE    = re.compile(r"(\d+(?:\.\d+)?)\s*억")
+```
+
+`merge_complex_name`, `norm_apt_name`, `_digits`, `digit_overlap_score`, `parse_price_to_won_scalar` 함수에서 미리 컴파일된 패턴 사용.
+
+대표 주소가 이미 채워진 경우 `fill_representative_address_from_rows` 호출 스킵:
+
+```python
+# 수정 전 — 항상 호출
+out = fill_representative_address_from_rows(out, top_n_postal=1)
+
+# 수정 후 — 필요한 경우만 호출
+if not rep_road or not rep_zip:
+    out = fill_representative_address_from_rows(out, top_n_postal=1)
+```
+
+---
+
+---
+
 ## 2026-06-17
 
 ---

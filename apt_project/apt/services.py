@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 # ──────────────────────────────────────────────────────────────
 _city_cache: dict = {}
 _city_cache_lock = threading.Lock()
+_city_fetching: set = set()          # 백그라운드 패치 중인 key 집합
+_city_fetching_lock = threading.Lock()
 
 
 def _fetch_city_area_price(City: str, start_date: str, end_date: str) -> pd.DataFrame:
@@ -43,8 +45,11 @@ def _fetch_city_area_price(City: str, start_date: str, end_date: str) -> pd.Data
             logger.warning('구 수집 실패 %s: %s', district, e)
             return pd.DataFrame()
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
-        dfs = list(pool.map(_fetch_with_tag, districts))
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            dfs = list(pool.map(_fetch_with_tag, districts))
+    except RuntimeError:
+        dfs = [_fetch_with_tag(d) for d in districts]
 
     dfs = [df for df in dfs if not df.empty]
     result = pd.concat(dfs).reset_index(drop=True) if dfs else pd.DataFrame()
@@ -434,10 +439,15 @@ def normalize_filter_base_for_complex(
 # ──────────────────────────────────────────────────────────────
 
 def svc_district_ticker(City: str, start_date: str, end_date: str) -> dict:
-    """구별 평균 실거래가 및 월 변동률 — ticker용"""
-    city_df = get_city_area_price(City, start_date, end_date)
+    """구별 평균 실거래가 및 월 변동률 — ticker용.
+    캐시 히트 시 즉시 반환. 미스 시 빈 items 반환 (백그라운드 fetch 시작 안 함 — 구별비교 탭 클릭 시에만 시작)."""
+    key = (City, start_date, end_date)
+    with _city_cache_lock:
+        city_df = _city_cache.get(key)
+
     if city_df is None or city_df.empty:
         return {'ok': True, 'items': []}
+
 
     if '_district' not in city_df.columns:
         return {'ok': True, 'items': []}
@@ -489,6 +499,107 @@ def svc_district_ticker(City: str, start_date: str, end_date: str) -> dict:
 
     items.sort(key=lambda x: x['avgPrice'], reverse=True)
     return {'ok': True, 'items': items}
+
+
+# ──────────────────────────────────────────────────────────────
+# 아파트 등급 산출 (S/A/B/C/D)
+# ──────────────────────────────────────────────────────────────
+
+def _price_score(percentile: float) -> float:
+    """구 내 백분위 → 가격 경쟁력 점수 (0-40). 낮을수록 저렴 = 좋음."""
+    return round((1.0 - percentile / 100.0) * 40.0, 1)
+
+
+def _infra_score(nearby: dict) -> float:
+    """주변 시설 접근성 점수 (0-30). 지하철 15pt / 학교 10pt / 마트 5pt."""
+    def _pts(items: list, full: float) -> float:
+        if not items:
+            return 0.0
+        mins = items[0].get('walkMins') or 99
+        if mins <= 5:  return full
+        if mins <= 10: return round(full * 0.67, 1)
+        if mins <= 15: return round(full * 0.33, 1)
+        return 0.0
+    return round(
+        _pts(nearby.get('subways') or [], 15.0)
+        + _pts(nearby.get('schools')  or [], 10.0)
+        + _pts(nearby.get('marts')    or [],  5.0),
+        1,
+    )
+
+
+def _size_score(households: int) -> float:
+    """세대수 → 단지 규모 점수 (0-20)."""
+    if households >= 2000: return 20.0
+    if households >= 1000: return 14.0
+    if households >= 500:  return  8.0
+    return 4.0
+
+
+def _volume_score(trade_volume: int) -> float:
+    """거래건수 → 유동성 점수 (0-10)."""
+    if trade_volume >= 50: return 10.0
+    if trade_volume >= 20: return  6.0
+    if trade_volume >= 10: return  3.0
+    return 1.0
+
+
+def _to_grade(normalized: float) -> str:
+    if normalized >= 85: return 'S'
+    if normalized >= 70: return 'A'
+    if normalized >= 55: return 'B'
+    if normalized >= 40: return 'C'
+    return 'D'
+
+
+_GRADE_KEY = {
+    '가격 경쟁력':   'price',
+    '인프라 접근성': 'infra',
+    '단지 규모':     'size',
+    '거래 활성도':   'volume',
+}
+
+
+def compute_apt_grade(
+    percentile: float | None = None,
+    households: int | None = None,
+    nearby_info: dict | None = None,
+    trade_volume: int | None = None,
+) -> dict:
+    """
+    아파트 S/A/B/C/D 등급 산출. None인 기준은 제외하고 가중치 재정규화.
+
+    최대 가중치: 가격 경쟁력 40 | 인프라 접근성 30 | 단지 규모 20 | 거래 활성도 10
+    """
+    parts: list[tuple[float, float, str]] = []
+
+    if percentile is not None:
+        parts.append((_price_score(float(percentile)), 40.0, '가격 경쟁력'))
+    if nearby_info is not None:
+        parts.append((_infra_score(nearby_info), 30.0, '인프라 접근성'))
+    if households is not None:
+        parts.append((_size_score(int(households)), 20.0, '단지 규모'))
+    if trade_volume is not None:
+        parts.append((_volume_score(int(trade_volume)), 10.0, '거래 활성도'))
+
+    if not parts:
+        return {'grade': 'N/A', 'score': 0, 'maxScore': 0, 'normalized': 0, 'breakdown': {}}
+
+    total   = sum(s for s, _, _ in parts)
+    max_pts = sum(m for _, m, _ in parts)
+    norm    = total / max_pts * 100 if max_pts else 0.0
+
+    breakdown = {
+        _GRADE_KEY[lbl]: {'score': s, 'max': m, 'label': lbl}
+        for s, m, lbl in parts
+    }
+    return {
+        'grade':      _to_grade(norm),
+        'score':      round(total, 1),
+        'maxScore':   max_pts,
+        'normalized': round(norm, 1),
+        'breakdown':  breakdown,
+    }
 
 
 # ──────────────────────────────────────────────────────────────
@@ -647,23 +758,105 @@ def svc_address_results(body: dict):
     prices_won = [it['price'] for it in items if it.get('price') is not None]
     apt_avg_won = sum(prices_won) / len(prices_won) if prices_won else None
 
-    compare = build_compare_series(items)
-    target_areas = [s['area'] for s in compare]
-    city_base = get_city_area_price(City, start_date, end_date)
+    apt_name      = str(selected_complex).strip()
+    compare       = build_compare_series(items)
+    price_series  = build_price_series(items)
+    target_areas  = [s['area'] for s in compare]
+    # 캐시에 있으면 바로 사용, 없으면 districtBars 생략 (ticker 호출 후 캐시됨)
+    with _city_cache_lock:
+        city_base = _city_cache.get((City, start_date, end_date))
+    households    = _df_scalar(out, '세대수', int)
+    district_stats = compute_district_stats(base, apt_avg_won)
+    trade_volume  = sum(s.get('volume', 0) for s in price_series)
+
+    from . import fetch_nearby as _fn
+    try:
+        nearby = _fn.fetch_infra_for_grade(chosen_road or '')
+    except Exception:
+        nearby = None
+
+    grade = compute_apt_grade(
+        percentile=district_stats['percentile'] if district_stats else None,
+        households=households,
+        nearby_info=nearby,
+        trade_volume=trade_volume,
+    )
+
     return {
         'ok': True,
         'items': items,
-        'priceSeries':           build_price_series(items),
+        'priceSeries':           price_series,
         'compareSeries':         compare,
-        'areaComplexBars':       build_area_complex_bars(base, float(selected_area), str(selected_complex).strip()),
+        'areaComplexBars':       build_area_complex_bars(base, float(selected_area), apt_name),
         'districtCompareSeries': build_district_compare_series(base, target_areas),
         'districtBars':          build_district_bars(city_base, target_areas[0] if target_areas else 0, District),
-        'aptName':        str(selected_complex).strip(),
+        'aptName':        apt_name,
         'roadAddress':    chosen_road,
-        'households':     _df_scalar(out, '세대수', int),
+        'households':     households,
         'parking':        _df_scalar(out, '전체주차대수', str),
-        'districtStats':  compute_district_stats(base, apt_avg_won),
+        'districtStats':  district_stats,
+        'grade':          grade,
     }
+
+
+# ──────────────────────────────────────────────────────────────
+# 구별 비교 지연 로딩
+# ──────────────────────────────────────────────────────────────
+
+def _background_city_fetch(City: str, start_date: str, end_date: str) -> None:
+    """백그라운드 데몬 스레드: _city_cache 채우기."""
+    key = (City, start_date, end_date)
+    try:
+        df = _fetch_city_area_price(City, start_date, end_date)
+        with _city_cache_lock:
+            _city_cache[key] = df
+        logger.info('백그라운드 city fetch 완료: %s %s~%s (%d행)', City, start_date, end_date, len(df))
+    except Exception as e:
+        logger.error('백그라운드 city fetch 오류: %s', e)
+    finally:
+        with _city_fetching_lock:
+            _city_fetching.discard(key)
+
+
+def svc_district_bars(body: dict) -> dict:
+    """
+    구별 비교 차트용 데이터.
+    - 캐시 히트  → 즉시 반환 (pending=false)
+    - 캐시 미스  → 백그라운드 패치 시작 후 pending=true 즉시 반환
+                   (프론트가 30초 간격으로 폴링)
+    """
+    City          = body.get('City', '서울특별시')
+    District      = body.get('District', '')
+    start_date    = body.get('start_date', '')
+    end_date      = body.get('end_date', '')
+    selected_area = float(body.get('selected_area', 0) or 0)
+
+    key = (City, start_date, end_date)
+
+    with _city_cache_lock:
+        city_base = _city_cache.get(key)
+
+    if city_base is not None:
+        bars = build_district_bars(city_base, selected_area, District)
+        return {'ok': True, 'districtBars': bars, 'pending': False}
+
+    # 캐시 미스: 백그라운드 패치를 중복 없이 시작
+    with _city_fetching_lock:
+        already = key in _city_fetching
+        if not already:
+            _city_fetching.add(key)
+
+    if not already:
+        import threading as _t
+        t = _t.Thread(
+            target=_background_city_fetch,
+            args=(City, start_date, end_date),
+            daemon=True,
+        )
+        t.start()
+        logger.info('백그라운드 city fetch 시작: %s %s~%s', City, start_date, end_date)
+
+    return {'ok': True, 'districtBars': [], 'pending': True}
 
 
 # ──────────────────────────────────────────────────────────────
@@ -738,8 +931,35 @@ def svc_filter_list(body: dict):
             item['lat'], item['lng'] = coords
         return item
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
-        out = list(pool.map(_geocode, out))
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
+            out = list(pool.map(_geocode, out))
+    except RuntimeError:
+        out = [_geocode(item) for item in out]
+
+    # ── 리스트 등급 (가격·단지규모·거래건수, 인프라 제외) ──────
+    price_vals = [(i, item['최저거래가']) for i, item in enumerate(out)
+                  if item.get('최저거래가') is not None]
+    if price_vals:
+        min_p = min(p for _, p in price_vals)
+        max_p = max(p for _, p in price_vals)
+    else:
+        min_p = max_p = 0
+
+    for i, item in enumerate(out):
+        raw_p = item.get('최저거래가')
+        pct = (
+            (raw_p - min_p) / (max_p - min_p) * 100
+            if raw_p is not None and max_p > min_p else 50.0
+        )
+        vol_digits = _re.sub(r'[^\d]', '', str(item.get('거래건수합') or ''))
+        vol = int(vol_digits) if vol_digits else None
+        hh  = item.get('세대수')
+        item['grade'] = compute_apt_grade(
+            percentile=pct,
+            households=hh if isinstance(hh, int) else None,
+            trade_volume=vol,
+        )
 
     return {'ok': True, 'items': out}
 
@@ -893,8 +1113,11 @@ def svc_subway_peer(body: dict):
             'lng':           lng,
         }
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
-        raw = list(pool.map(_process, complex_stats.items()))
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+            raw = list(pool.map(_process, complex_stats.items()))
+    except RuntimeError:
+        raw = [_process(item) for item in complex_stats.items()]
 
     items = [r for r in raw if r is not None]
     items.sort(key=lambda x: x['subwayDist'])
@@ -962,20 +1185,41 @@ def svc_filter_detail_results(body: dict):
     prices_won = [it['price'] for it in items if it.get('price') is not None]
     apt_avg_won = sum(prices_won) / len(prices_won) if prices_won else None
 
-    compare = build_compare_series(items)
-    target_areas = [s['area'] for s in compare]
-    city_base = get_city_area_price(City, start_date, end_date)
+    compare       = build_compare_series(items)
+    price_series  = build_price_series(items)
+    target_areas  = [s['area'] for s in compare]
+    # 캐시에 있으면 바로 사용, 없으면 districtBars 생략 (ticker 호출 후 캐시됨)
+    with _city_cache_lock:
+        city_base = _city_cache.get((City, start_date, end_date))
+    households    = _df_scalar(d, '세대수', int)
+    district_stats = compute_district_stats(base, apt_avg_won)
+    trade_volume  = sum(s.get('volume', 0) for s in price_series)
+
+    from . import fetch_nearby as _fn
+    try:
+        nearby = _fn.fetch_infra_for_grade(rep_road or '')
+    except Exception:
+        nearby = None
+
+    grade = compute_apt_grade(
+        percentile=district_stats['percentile'] if district_stats else None,
+        households=households,
+        nearby_info=nearby,
+        trade_volume=trade_volume,
+    )
+
     return {
         'ok': True,
         'items': items,
-        'priceSeries':           build_price_series(items),
+        'priceSeries':           price_series,
         'compareSeries':         compare,
         'areaComplexBars':       build_area_complex_bars(base, use_area, target_name),
         'districtCompareSeries': build_district_compare_series(base, target_areas),
         'districtBars':          build_district_bars(city_base, target_areas[0] if target_areas else 0, District),
         'aptName':        target_name,
         'roadAddress':    rep_road,
-        'households':     _df_scalar(d, '세대수', int),
+        'households':     households,
         'parking':        _df_scalar(d, '전체주차대수', str),
-        'districtStats':  compute_district_stats(base, apt_avg_won),
+        'districtStats':  district_stats,
+        'grade':          grade,
     }

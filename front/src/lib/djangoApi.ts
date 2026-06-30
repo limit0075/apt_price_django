@@ -4,6 +4,7 @@ import type {
   ComplexItem,
   AreaItem,
   AddressResultsData,
+  DistrictBar,
   FilterListItem,
   NearbyInfo,
   SubwayPeerItem,
@@ -94,6 +95,17 @@ export async function fetchResults(
     selected_complex: complexName,
     selected_area: area,
   });
+}
+
+export async function fetchDistrictBars(
+  base: BaseParams,
+  area: number,
+): Promise<{ bars: DistrictBar[]; pending: boolean }> {
+  const data = await post<{ ok: boolean; districtBars: DistrictBar[]; pending: boolean }>(
+    "/address/district-bars/",
+    { ...base, selected_area: area },
+  );
+  return { bars: data.districtBars ?? [], pending: data.pending ?? false };
 }
 
 export async function fetchFilterList(

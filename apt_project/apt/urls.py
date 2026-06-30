@@ -14,7 +14,8 @@ urlpatterns = [
     path('api/address/candidates/', api.address_candidates, name='api_address_candidates'),
     path('api/address/complexes/',  api.address_complexes,  name='api_address_complexes'),
     path('api/address/areas/',      api.address_areas,      name='api_address_areas'),
-    path('api/address/results/',    api.address_results,    name='api_address_results'),
+    path('api/address/results/',       api.address_results,       name='api_address_results'),
+    path('api/address/district-bars/', api.address_district_bars, name='api_address_district_bars'),
 
     # ── API: 조건 모드 ─────────────────────────────────────
     path('api/filter/list/',            api.filter_list,           name='api_filter_list'),

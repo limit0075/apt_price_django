@@ -171,6 +171,28 @@ def search_naver_blog(query: str, display: int = 5,
         return []
 
 
+def fetch_infra_for_grade(road_address: str) -> dict | None:
+    """등급 산출용 인프라 정보 (지하철·학교·마트만, 병렬 조회). 블로그·병원 제외."""
+    coords = geocode_address(road_address) if road_address else None
+    if not coords:
+        return None
+    lat, lng = coords
+    import concurrent.futures as _cf
+    try:
+        with _cf.ThreadPoolExecutor(max_workers=3) as pool:
+            f_sub  = pool.submit(search_nearby, lat, lng, _CATEGORY_CODES['subways'], 1500)
+            f_sch  = pool.submit(search_nearby, lat, lng, _CATEGORY_CODES['schools'],  1000)
+            f_mart = pool.submit(search_nearby, lat, lng, _CATEGORY_CODES['marts'],    2000)
+            subways = f_sub.result()
+            schools = f_sch.result()
+            marts   = f_mart.result()
+    except RuntimeError:
+        subways = search_nearby(lat, lng, _CATEGORY_CODES['subways'], 1500)
+        schools = search_nearby(lat, lng, _CATEGORY_CODES['schools'],  1000)
+        marts   = search_nearby(lat, lng, _CATEGORY_CODES['marts'],    2000)
+    return {'subways': subways, 'schools': schools, 'marts': marts}
+
+
 def fetch_nearby_info(road_address: str, apt_name: str, district: str = '') -> dict:
     """
     주소 + 단지명 기반으로 주변 시설 + 임장 블로그 정보를 반환.

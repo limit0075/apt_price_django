@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   LineChart,
   Line,
@@ -59,99 +59,102 @@ const axisTick = {
 const MARGIN = { top: 10, right: 24, left: 8, bottom: 0 } as const;
 const YAXIS_W = 52;
 
+// ── 커스텀 툴팁 (컴포넌트 외부 — 렌더마다 재생성 방지) ───────────
+interface PriceTooltipProps {
+  active?: boolean;
+  label?: string;
+  merged: Record<string, string | number>[];
+  results: CompareResult[];
+}
+
+const PriceTooltip = ({ active, label, merged, results }: PriceTooltipProps) => {
+  if (!active || !label) return null;
+  const row = merged.find((d) => d.date === label);
+  if (!row) return null;
+  return (
+    <div style={tooltipStyle}>
+      <div
+        style={{
+          color: "hsl(20 8% 50%)",
+          fontSize: 10,
+          textTransform: "uppercase",
+          letterSpacing: "0.12em",
+          marginBottom: 6,
+        }}
+      >
+        {label}
+      </div>
+      {results.map((r, i) => {
+        const price = row[r.name] as number;
+        const vol = row[`${r.name}__v`] as number;
+        if (!price) return null;
+        return (
+          <div
+            key={r.name}
+            style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}
+          >
+            <span
+              style={{
+                display: "inline-block",
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: COLORS[i % COLORS.length],
+                flexShrink: 0,
+              }}
+            />
+            <span style={{ fontWeight: 600, minWidth: 0 }}>{r.name}</span>
+            <span style={{ marginLeft: "auto", paddingLeft: 12 }}>
+              {formatWonShort(price)}
+            </span>
+            {vol > 0 && (
+              <span style={{ color: "hsl(20 8% 50%)", fontSize: 10 }}>
+                {vol}건
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 export const ComparePanel = ({ results, error, onRemove }: Props) => {
   const [tab, setTab] = useState<"timeseries" | "avgprice">("timeseries");
 
   // 모든 날짜 합집합 — 두 차트가 동일한 배열을 사용해 X 위치가 일치
-  const allDates = [
-    ...new Set(results.flatMap((r) => r.priceSeries.map((p) => p.date))),
-  ].sort();
+  const allDates = useMemo(
+    () => [...new Set(results.flatMap((r) => r.priceSeries.map((p) => p.date)))].sort(),
+    [results],
+  );
 
   // 가격·거래량을 하나의 배열에 병합 (null 대신 0 사용 → stacked bar 정상 동작)
-  const merged = allDates.map((date) => {
-    const row: Record<string, string | number> = { date };
-    for (const r of results) {
-      const p = r.priceSeries.find((x) => x.date === date);
-      row[r.name] = p?.avgPrice ?? 0;
-      row[`${r.name}__v`] = p?.volume ?? 0;
-    }
-    return row;
-  });
+  const merged = useMemo(
+    () =>
+      allDates.map((date) => {
+        const row: Record<string, string | number> = { date };
+        for (const r of results) {
+          const p = r.priceSeries.find((x) => x.date === date);
+          row[r.name] = p?.avgPrice ?? 0;
+          row[`${r.name}__v`] = p?.volume ?? 0;
+        }
+        return row;
+      }),
+    [allDates, results],
+  );
 
   // 기간 평균가 바차트 데이터
-  const avgData = results.map((r, i) => {
-    const prices = r.priceSeries
-      .map((p) => p.avgPrice)
-      .filter((v) => v > 0);
-    const avg = prices.length
-      ? Math.round(prices.reduce((a, b) => a + b, 0) / prices.length)
-      : 0;
-    return { name: r.name, avg, color: COLORS[i % COLORS.length] };
-  });
-
-  // 커스텀 툴팁: 가격과 거래량을 한 박스에 표시
-  const PriceTooltip = ({
-    active,
-    label,
-  }: {
-    active?: boolean;
-    label?: string;
-  }) => {
-    if (!active || !label) return null;
-    const row = merged.find((d) => d.date === label);
-    if (!row) return null;
-    return (
-      <div style={tooltipStyle}>
-        <div
-          style={{
-            color: "hsl(20 8% 50%)",
-            fontSize: 10,
-            textTransform: "uppercase",
-            letterSpacing: "0.12em",
-            marginBottom: 6,
-          }}
-        >
-          {label}
-        </div>
-        {results.map((r, i) => {
-          const price = row[r.name] as number;
-          const vol = row[`${r.name}__v`] as number;
-          if (!price) return null;
-          return (
-            <div
-              key={r.name}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                marginBottom: 3,
-              }}
-            >
-              <span
-                style={{
-                  display: "inline-block",
-                  width: 8,
-                  height: 8,
-                  borderRadius: "50%",
-                  background: COLORS[i % COLORS.length],
-                  flexShrink: 0,
-                }}
-              />
-              <span style={{ fontWeight: 600, minWidth: 0 }}>{r.name}</span>
-              <span style={{ marginLeft: "auto", paddingLeft: 12 }}>
-                {formatWonShort(price)}
-              </span>
-              {vol > 0 && (
-                <span style={{ color: "hsl(20 8% 50%)", fontSize: 10 }}>
-                  {vol}건
-                </span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
+  const avgData = useMemo(
+    () =>
+      results.map((r, i) => {
+        const prices = r.priceSeries.map((p) => p.avgPrice).filter((v) => v > 0);
+        const avg = prices.length
+          ? Math.round(prices.reduce((a, b) => a + b, 0) / prices.length)
+          : 0;
+        return { name: r.name, avg, color: COLORS[i % COLORS.length] };
+      }),
+    [results],
+  );
 
   return (
     <Panel
@@ -249,7 +252,7 @@ export const ComparePanel = ({ results, error, onRemove }: Props) => {
                   width={YAXIS_W}
                 />
                 <Tooltip
-                  content={<PriceTooltip />}
+                  content={<PriceTooltip merged={merged} results={results} />}
                   cursor={{
                     stroke: "hsl(215 14% 58%)",
                     strokeWidth: 1,

@@ -15,10 +15,12 @@
 """
 
 from datakart import Datagokr
+import concurrent.futures
 import pandas as pd
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import time
+import threading
 import requests
 import xml.etree.ElementTree as ET
 from functools import lru_cache
@@ -46,6 +48,20 @@ KAPT_KEY   = os.getenv('KAPT_KEY')
 
 
 datago = Datagokr(DATAGO_KEY)
+
+# 국토부 API 레이트 리미터
+# data.go.kr은 동일 키 기준 초당 요청 수를 제한하므로 최소 간격을 강제
+_MOLIT_LOCK      = threading.Lock()
+_MOLIT_LAST_T    = 0.0
+_MOLIT_MIN_GAP   = 1.2   # 초당 최대 0.8 요청 (429 방지)
+
+# 모듈 레벨 미리 컴파일 — 호출마다 재컴파일 방지
+_RE_WHITESPACE   = re.compile(r"\s+")
+_RE_FLOOR_GROUP  = re.compile(r"\(\s*(고층|저층)\s*\)")
+_RE_PAREN        = re.compile(r"\(.*?\)")
+_RE_NON_ALPHANUM = re.compile(r"[^0-9가-힣]")
+_RE_DIGITS       = re.compile(r"\d+")
+_RE_EOK_PRICE    = re.compile(r"(\d+(?:\.\d+)?)\s*억")
 
 # ==========================================================
 # 0) 공통 유틸
@@ -128,7 +144,7 @@ def parse_price_to_won_scalar(x):
     if isinstance(x, (int, float)):
         return int(x)
     s = str(x).strip().replace(",", "")
-    m = re.fullmatch(r"(\d+(?:\.\d+)?)\s*억", s)
+    m = _RE_EOK_PRICE.fullmatch(s)
     if m:
         v = float(m.group(1))
         return int(v * 100_000_000)
@@ -147,28 +163,25 @@ def merge_complex_name(name: str) -> str:
     """
     if name is None:
         return ""
-    s = str(name).strip()
-    s = re.sub(r"\s+", " ", s)
-    s = re.sub(r"\((고층|저층)\)", "", s)
-    s = re.sub(r"\(\s*(고층|저층)\s*\)", "", s)
+    s = _RE_WHITESPACE.sub(" ", str(name).strip())
+    s = _RE_FLOOR_GROUP.sub("", s)
     return s.strip()
+
+_NORM_STOP_WORDS = ["아파트", "apt", "단지", "주공", "임대", "sh", "lh", "관리", "연립", "빌라", "주택", "the"]
 
 def norm_apt_name(s: str) -> str:
     """단지명 비교용 정규화(특수/공백 제거 + 흔한 토큰 제거)"""
     if s is None:
         return ""
-    t = str(s).strip().lower()
-    t = re.sub(r"\(.*?\)", "", t)
-    stop = ["아파트", "apt", "단지", "주공", "임대", "sh", "lh", "관리", "연립", "빌라", "주택", "the"]
-    for w in stop:
+    t = _RE_PAREN.sub("", str(s).strip().lower())
+    for w in _NORM_STOP_WORDS:
         t = t.replace(w, "")
-    t = re.sub(r"[^0-9가-힣]", "", t)
-    return t
+    return _RE_NON_ALPHANUM.sub("", t)
 
 def _digits(s: str) -> str:
     if not s:
         return ""
-    return "".join(re.findall(r"\d+", str(s)))
+    return "".join(_RE_DIGITS.findall(str(s)))
 
 def digit_overlap_score(a: str, b: str) -> float:
     """
@@ -178,14 +191,11 @@ def digit_overlap_score(a: str, b: str) -> float:
     da, db = _digits(a), _digits(b)
     if not da or not db:
         return 0.0
-    # 완전 일치면 크게
     if da == db:
         return 1.0
-    # 부분 포함/교집합
     if da in db or db in da:
         return 0.7
-    # 공통 숫자 토큰 비율
-    sa, sb = set(re.findall(r"\d+", a)), set(re.findall(r"\d+", b))
+    sa, sb = set(_RE_DIGITS.findall(a)), set(_RE_DIGITS.findall(b))
     inter = len(sa & sb)
     union = len(sa | sb) if (sa or sb) else 1
     return float(inter / union)
@@ -335,16 +345,47 @@ def add_road_zip_columns(df: pd.DataFrame, top_n: int = 2) -> pd.DataFrame:
 # ==========================================================
 # 2) 실거래(datakart)
 # ==========================================================
-def safe_apt_trade(datago, lawd_cd, ymd, retry=3, delay=0.6):
+def _molit_wait():
+    """최소 호출 간격(_MOLIT_MIN_GAP)을 보장하는 레이트 리미터."""
+    global _MOLIT_LAST_T
+    with _MOLIT_LOCK:
+        now = time.time()
+        gap = _MOLIT_MIN_GAP - (now - _MOLIT_LAST_T)
+        if gap > 0:
+            time.sleep(gap)
+        _MOLIT_LAST_T = time.time()
+
+
+class _QuotaExceeded(Exception):
+    """모든 재시도가 429로 실패 — 일일 할당량 초과 신호."""
+
+
+def safe_apt_trade(datago, lawd_cd, ymd, retry=4):
+    all_429 = True
     for i in range(retry):
+        _molit_wait()
         try:
             resp = datago.apt_trade(lawd_cd, ymd)
             if not resp:
                 return pd.DataFrame()
             return pd.DataFrame(resp)
         except Exception as e:
+            msg = str(e)
+            is_429 = "429" in msg or "Too Many" in msg
+            is_502 = "502" in msg or "Bad Gateway" in msg
+            if not is_429:
+                all_429 = False
             print(f"[ERROR] apt_trade {ymd} ({i+1}/{retry}) -> {e}")
-            time.sleep(delay * (2 ** i))
+            if i < retry - 1:
+                if is_429:
+                    wait = 5.0
+                elif is_502:
+                    wait = 15.0 * (i + 1)  # 15s, 30s, 45s
+                else:
+                    wait = 1.0 * (2 ** i)
+                time.sleep(wait)
+    if all_429:
+        raise _QuotaExceeded(ymd)
     return pd.DataFrame()
 
 def area_sort(area):
@@ -386,8 +427,19 @@ def area_price(City, District, start_date, end_date):
         raise ValueError("지역명을 찾을 수 없습니다. City/District 확인")
     lawd_cd = sido_num["sido_sgg"].values[0]
 
+    consecutive_quota = 0
     for ymd in dates:
-        df = safe_apt_trade(datago, lawd_cd, ymd)
+        try:
+            df = safe_apt_trade(datago, lawd_cd, ymd)
+        except _QuotaExceeded:
+            consecutive_quota += 1
+            if consecutive_quota >= 3:
+                raise RuntimeError(
+                    "국토부 MOLIT API 일일 요청 한도 초과. "
+                    "잠시 후 다시 조회하거나 다음 날 시도하세요."
+                )
+            continue
+        consecutive_quota = 0
         if df.empty:
             continue
 
@@ -401,10 +453,11 @@ def area_price(City, District, start_date, end_date):
         df = df.filter([c for c in keep if c in df.columns])
 
         if "buyerGbn" in df.columns:
-            df = df[df["buyerGbn"] == "개인"].copy()
+            # None/NaN = 구버전 API(값 미제공) → 제외하지 않음
+            mask = df["buyerGbn"].isna() | (df["buyerGbn"].astype(str).str.strip() == "개인")
+            df = df[mask].copy()
 
         result.append(df)
-        time.sleep(0.18)
 
     if not result:
         _area_price_cache[_cache_key] = pd.DataFrame()
@@ -533,17 +586,21 @@ def kapt_list_by_sido(sido_name: str, numOfRows: int = 2000, max_pages: int = 60
             break
         all_items.extend(items)
 
-        total = body.get("totalCount")
-        if isinstance(total, int) and len(all_items) >= total:
+        try:
+            total_n = int(body.get("totalCount") or 0)
+        except (ValueError, TypeError):
+            total_n = 0
+        if total_n and len(all_items) >= total_n:
             break
     return all_items
 
 @lru_cache(maxsize=50000)
 def get_kapt_basic_raw(kapt_code: str) -> dict:
-    items, _ = _kapt_get(KAPT_BASS_URL, {"kaptCode": kapt_code, "numOfRows": 10, "pageNo": 1})
-    if not items:
+    try:
+        items, _ = _kapt_get(KAPT_BASS_URL, {"kaptCode": kapt_code, "numOfRows": 10, "pageNo": 1})
+        return items[0] if items else {}
+    except Exception:
         return {}
-    return items[0]
 
 def _pick_household_cnt_from_item(it: dict):
     # BASS 기준: hoCnt가 가장 확실
@@ -650,12 +707,21 @@ def choose_kapt_auto_strict(
         print(f"{title} 후보가 없습니다.")
         return None, []
 
+    # KAPT basic info 병렬 prefetch (순차 → 병렬)
+    codes = [(it.get("kaptCode") or "").strip() for it in cands]
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(codes), 8)) as pool:
+            bass_list = list(pool.map(get_kapt_basic_raw, codes))
+    except RuntimeError:
+        bass_list = [get_kapt_basic_raw(c) for c in codes]
+    bass_map = dict(zip(codes, bass_list))
+
     rows = []
     for it in cands:
         code = (it.get("kaptCode") or "").strip()
         name = (it.get("kaptName") or "").strip()
 
-        bass = get_kapt_basic_raw(code)
+        bass = bass_map.get(code, {})
         hh = _to_int(_pick_household_cnt_from_item(bass))
 
         addr_sc = _kapt_addr_score(bass, chosen_zip, chosen_road, chosen_jibun, chosen_dong, chosen_bunji)
@@ -929,24 +995,35 @@ def list_apt_under_price_and_households(
     g = g.sort_values(["최저거래가_원", "최근거래일"], ascending=[True, False]).head(max_trade_units).reset_index(drop=True)
 
     # ✅ 단지-동별 best KAPT → 세대수/대표주소
-    kapt_code_list = []
-    hh_list = []
-    rep_road_list = []
-    rep_zip_list = []
+    # 1) kapt_list 캐시를 먼저 단일 스레드로 예열 (thundering herd 방지)
+    kapt_list_by_sido(City)
 
-    for _, row in g.iterrows():
-        apt_merge = row["단지명_병합"]
-        dong = row["법정동"]
+    # 2) 고유 (apt_merge, dong) 쌍에 대해 kapt_code 탐색 (in-memory — 빠름)
+    lookup_args = [(row["단지명_병합"], row["법정동"]) for _, row in g.iterrows()]
+    unique_keys = list(dict.fromkeys(lookup_args))  # 순서 유지하며 중복 제거
 
+    kaptcode_map: dict = {}
+    for apt_merge, dong in unique_keys:
         best, score = best_kapt_for_apt(City, District, dong, apt_merge)
-        if not best or score < min_name_similarity:
-            kapt_code_list.append(None)
-            hh_list.append(None)
-            rep_road_list.append(None)
-            rep_zip_list.append(None)
-            continue
+        kaptcode_map[(apt_merge, dong)] = best.get("kaptCode") if (best and score >= min_name_similarity) else None
 
-        kc = best.get("kaptCode")
+    # 3) 고유 kapt_code 에 대해 KAPT API 병렬 호출 (lru_cache 예열)
+    unique_kc = list({kc for kc in kaptcode_map.values() if kc})
+    if unique_kc:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=20) as kapt_pool:
+            list(kapt_pool.map(get_kapt_basic_raw, unique_kc))
+
+    # 4) 캐시 히트로 결과 조립
+    kapt_code_list = []
+    hh_list        = []
+    rep_road_list  = []
+    rep_zip_list   = []
+    for apt_merge, dong in lookup_args:
+        kc = kaptcode_map.get((apt_merge, dong))
+        if not kc:
+            kapt_code_list.append(None); hh_list.append(None)
+            rep_road_list.append(None);  rep_zip_list.append(None)
+            continue
         bass_raw = get_kapt_basic_raw(kc)
         kapt_code_list.append(kc)
         hh_list.append(_pick_household_cnt_from_item(bass_raw))
@@ -1071,8 +1148,9 @@ def detail_by_apt_name(
     if rep_zip:
         out["우편번호"] = rep_zip
 
-    # ✅ 비어있으면 row 기반 보강
-    out = fill_representative_address_from_rows(out, top_n_postal=1)
+    # 두 주소가 모두 없을 때만 row 기반 보강 (EPOST API 호출 절약)
+    if not rep_road or not rep_zip:
+        out = fill_representative_address_from_rows(out, top_n_postal=1)
 
     # ✅ 대표주소 기반 chosen_* 생성
     chosen_zip, chosen_road, chosen_jibun, chosen_dong, chosen_bunji = chosen_from_representative_address(out)

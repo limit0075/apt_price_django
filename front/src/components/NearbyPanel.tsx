@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { ExternalLink, BookOpen, Train, GraduationCap, ShoppingBag, Clock } from "lucide-react";
 import { Panel } from "./Panel";
 import { cn } from "@/lib/utils";
@@ -27,15 +27,21 @@ declare global {
 
 function loadKakaoSdk(key: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    // 이미 로드 완료
-    if (window.kakao?.maps) { resolve(); return; }
+    // 이미 완전히 초기화된 경우 (LatLng가 생성자로 사용 가능)
+    if (typeof window.kakao?.maps?.LatLng === 'function') { resolve(); return; }
 
-    // 이미 삽입된 스크립트 대기
-    if (document.querySelector('script[data-kakao]')) {
+    // SDK namespace는 있지만 autoload=false로 미초기화 → load() 호출
+    if (window.kakao?.maps) { window.kakao.maps.load(resolve); return; }
+
+    // 이미 삽입된 Kakao SDK 스크립트 대기
+    const existingScript = document.querySelector<HTMLScriptElement>(
+      'script[data-kakao], script[src*="dapi.kakao.com/v2/maps"]'
+    );
+    if (existingScript) {
       let ms = 0;
       const poll = setInterval(() => {
         ms += 50;
-        if (window.kakao?.maps) { clearInterval(poll); resolve(); }
+        if (window.kakao?.maps) { clearInterval(poll); window.kakao.maps.load(resolve); }
         else if (ms > 15000) { clearInterval(poll); reject(new Error('SDK 로드 타임아웃 — 카카오 콘솔 도메인 등록 확인')); }
       }, 50);
       return;
@@ -43,7 +49,7 @@ function loadKakaoSdk(key: string): Promise<void> {
 
     const s = document.createElement('script');
     s.dataset.kakao = '1';
-    s.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${key}&autoload=false`;
+    s.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${key}&autoload=false`;
     s.onload  = () => window.kakao!.maps.load(resolve);
     s.onerror = () => reject(new Error(
       'SDK 로드 실패 — 카카오 콘솔에서 JavaScript 키 확인 및 Web 플랫폼(http://localhost:8082) 등록 필요'
@@ -144,8 +150,11 @@ export const NearbyPanel = ({ roadAddress, aptName, district, onSubwayFound }: P
   const [loading, setLoading]   = useState(false);
   const [sdkReady, setSdkReady] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
-  const mapRef      = useRef<HTMLDivElement>(null);
-  const mapInstance = useRef<any>(null);
+  const mapRef         = useRef<HTMLDivElement>(null);
+  const mapInstance    = useRef<any>(null);
+  // ref로 최신 콜백 유지 — deps에서 제외해 불필요한 API 재호출 방지
+  const onSubwayRef    = useRef(onSubwayFound);
+  useEffect(() => { onSubwayRef.current = onSubwayFound; }, [onSubwayFound]);
 
   // SDK 로드 (최초 1회)
   useEffect(() => {
@@ -156,8 +165,8 @@ export const NearbyPanel = ({ roadAddress, aptName, district, onSubwayFound }: P
       .catch((e: Error) => setMapError(e.message));
   }, []);
 
-  // 주변 정보 조회
-  useEffect(() => {
+  // 주변 정보 조회 — onSubwayFound 제외 (ref로 참조)
+  const handleNearby = useCallback(() => {
     if (!roadAddress) return;
     setLoading(true);
     setInfo(null);
@@ -165,13 +174,15 @@ export const NearbyPanel = ({ roadAddress, aptName, district, onSubwayFound }: P
       .then((data) => {
         setInfo(data);
         const first = data.subways?.[0];
-        if (first?.lat && first?.lng && onSubwayFound) {
-          onSubwayFound(first.lat, first.lng, first.name);
+        if (first?.lat && first?.lng && onSubwayRef.current) {
+          onSubwayRef.current(first.lat, first.lng, first.name);
         }
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [roadAddress, aptName, district, onSubwayFound]);
+  }, [roadAddress, aptName, district]);
+
+  useEffect(() => { handleNearby(); }, [handleNearby]);
 
   // 지도 초기화 — SDK + 좌표 모두 준비된 뒤
   useEffect(() => {

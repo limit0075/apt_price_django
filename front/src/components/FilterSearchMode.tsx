@@ -1,9 +1,11 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { Check, X, MapPin } from "lucide-react";
+import { AptGradeBadge, AptGradePanel } from "./AptGradeBadge";
 import { Map as KakaoMap, CustomOverlayMap, useMap, useKakaoLoader } from "react-kakao-maps-sdk";
 import { Panel } from "./Panel";
 import { StatTile } from "./StatTile";
 import { PriceCharts } from "./PriceCharts";
+import { TradesTable } from "./TradesTable";
 import { DistrictGauge } from "./DistrictGauge";
 import { NearbyPanel } from "./NearbyPanel";
 import { SubwayPeerChart } from "./SubwayPeerChart";
@@ -12,17 +14,19 @@ import type { CompareResult } from "./ComparePanel";
 import { cn } from "@/lib/utils";
 
 type SubwayCoord = { lat: number; lng: number; name: string };
-import { formatWon, formatWonShort, formatManwon } from "@/lib/format";
+import { formatWonShort, formatManwon } from "@/lib/format";
 import {
   fetchFilterList,
   fetchFilterAreas,
   fetchFilterResults,
+  fetchDistrictBars,
 } from "@/lib/djangoApi";
 import type {
   BaseParams,
   FilterListItem,
   AreaItem,
   AddressResultsData,
+  DistrictBar,
 } from "@/lib/djangoTypes";
 
 function parseHH(v: unknown): number {
@@ -89,6 +93,8 @@ export const FilterSearchMode = ({ baseParams }: Props) => {
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [subwayCoord, setSubwayCoord] = useState<SubwayCoord | null>(null);
+  const [districtBars, setDistrictBars] = useState<DistrictBar[]>([]);
+  const [districtBarsLoading, setDistrictBarsLoading] = useState(false);
 
   const handleSubwayFound = useCallback(
     (lat: number, lng: number, name: string) => setSubwayCoord({ lat, lng, name }),
@@ -155,11 +161,35 @@ export const FilterSearchMode = ({ baseParams }: Props) => {
       setSelectedArea(area);
       setResults(null);
       setSubwayCoord(null);
+      setDistrictBars([]);
+      setDistrictBarsLoading(false);
+      districtPollGenRef.current++;
       setLoading("results");
       setError(null);
       try {
         const data = await fetchFilterResults(baseParams, selectedComplex.name, area, effectiveMaxPrice, minHouseholds, null, effectivePyeongPrice);
         setResults(data);
+        setDistrictBarsLoading(true);
+        const gen = ++districtPollGenRef.current;
+        const poll = async (attempt = 0) => {
+          if (districtPollGenRef.current !== gen || attempt > 30) {
+            if (districtPollGenRef.current === gen) setDistrictBarsLoading(false);
+            return;
+          }
+          try {
+            const { bars, pending } = await fetchDistrictBars(baseParams, area);
+            if (districtPollGenRef.current !== gen) return;
+            if (!pending) {
+              setDistrictBars(bars);
+              setDistrictBarsLoading(false);
+            } else {
+              setTimeout(() => poll(attempt + 1), 30_000);
+            }
+          } catch {
+            setTimeout(() => poll(attempt + 1), 30_000);
+          }
+        };
+        poll();
       } catch (e) {
         setError(e instanceof Error ? e.message : "결과 조회 중 오류가 발생했습니다");
       } finally {
@@ -290,6 +320,7 @@ export const FilterSearchMode = ({ baseParams }: Props) => {
   // ── Fetch progress simulation ────────────────────────────────
   const [fetchProgress, setFetchProgress] = useState(0);
   const progressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const districtPollGenRef = useRef(0);
 
   useEffect(() => {
     if (loading === "results") {
@@ -565,48 +596,23 @@ export const FilterSearchMode = ({ baseParams }: Props) => {
                   priceSeries={results.priceSeries}
                   compareSeries={results.compareSeries}
                   areaComplexBars={results.areaComplexBars}
-                  districtBars={results.districtBars}
+                  districtBars={districtBars}
+                  districtBarsLoading={districtBarsLoading}
                   aptName={results.aptName || selectedComplex?.name || ""}
                   district={baseParams.District}
                   aptAvg={results.districtStats?.aptAvg}
+                  startDate={baseParams.start_date}
+                  endDate={baseParams.end_date}
                 />
-                {results.districtStats && (
-                  <DistrictGauge stats={results.districtStats} district={baseParams.District} />
-                )}
+                <div className="space-y-5">
+                  {results.districtStats && (
+                    <DistrictGauge stats={results.districtStats} district={baseParams.District} />
+                  )}
+                  {results.grade && <AptGradePanel grade={results.grade} />}
+                </div>
               </div>
 
-              <Panel tag="LEDGER" title="최근 실거래" subtitle={`${results.items.length}건`}>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-border text-left font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                        <th className="pb-2 pr-4">계약일</th>
-                        <th className="pb-2 pr-4">전용면적</th>
-                        <th className="pb-2 pr-4 text-center">층</th>
-                        <th className="pb-2 pr-4">건축년도</th>
-                        <th className="pb-2 pl-4 text-right">거래가</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {results.items.slice(0, 20).map((t, i) => (
-                        <tr key={i} className="border-b border-border/50 transition-snap hover:bg-surface">
-                          <td className="py-2.5 pr-4 font-mono text-[12px]">{t.dealDate ? t.dealDate.slice(0, 10) : "—"}</td>
-                          <td className="py-2.5 pr-4 font-mono text-[12px]">
-                            {t.area != null ? `${Number(t.area).toFixed(2)}㎡` : "—"}
-                          </td>
-                          <td className="py-2.5 pr-4 text-center font-mono text-[12px]">{t.floor ?? "—"}</td>
-                          <td className="py-2.5 pr-4 font-mono text-[12px] text-muted-foreground">{t.buildYear ?? "—"}</td>
-                          <td className="py-2.5 pl-4 text-right">
-                            <span className="font-mono text-[13px] font-semibold text-foreground">
-                              {t.price != null ? formatWon(t.price) : "—"}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </Panel>
+              <TradesTable items={results.items} />
 
               <NearbyPanel
                 roadAddress={results.roadAddress}
@@ -664,7 +670,7 @@ const MapView = ({
   onSelect: (c: FilterListItem) => void;
   isLoading?: boolean;
 }) => {
-  const [isLoaded, loadError] = useKakaoLoader({
+  const [mapLoading, loadError] = useKakaoLoader({
     appkey: import.meta.env.VITE_KAKAO_JS_KEY ?? "",
   });
   const mapped = complexes.filter((c) => c.lat && c.lng);
@@ -686,7 +692,7 @@ const MapView = ({
           <div className="flex h-full items-center justify-center bg-muted/30">
             <span className="text-sm text-destructive">지도 로드 실패</span>
           </div>
-        ) : !isLoaded ? (
+        ) : mapLoading ? (
           <div className="flex h-full items-center justify-center bg-muted/30">
             <span className="animate-pulse text-sm text-muted-foreground">지도 로딩 중...</span>
           </div>
@@ -845,7 +851,10 @@ const ComplexList = ({
                   )}
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-[13px] font-semibold">{c.name}</span>
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        {c.grade && <AptGradeBadge grade={c.grade} size="sm" />}
+                        <span className="truncate text-[13px] font-semibold">{c.name}</span>
+                      </div>
                       <div className="flex shrink-0 items-center gap-2">
                         {/* Area badge when area is chosen */}
                         {compareMode && entry?.area != null && (

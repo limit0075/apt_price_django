@@ -5,6 +5,8 @@ Django JSON API 뷰.
 무거운 작업은 services.py 에 위임합니다.
 """
 import json
+import math
+import threading
 import traceback
 import concurrent.futures
 
@@ -13,8 +15,20 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from . import services
+from . import fetch_data11
 
-_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+_executor: concurrent.futures.ThreadPoolExecutor | None = None
+_executor_lock = threading.Lock()
+
+
+def _get_executor() -> concurrent.futures.ThreadPoolExecutor:
+    """StatReloader 재시작 후 shutdown된 executor를 자동 재생성."""
+    global _executor
+    if _executor is None or _executor._shutdown:
+        with _executor_lock:
+            if _executor is None or _executor._shutdown:
+                _executor = concurrent.futures.ThreadPoolExecutor(max_workers=8)
+    return _executor
 
 
 # ── 헬퍼 ──────────────────────────────────────────────────────
@@ -26,9 +40,13 @@ def _body(request) -> dict:
         return {}
 
 
-def _run(fn, *args, **kwargs):
-    future = _executor.submit(fn, *args, **kwargs)
-    return future.result(timeout=300)
+def _run(fn, *args, timeout=600, **kwargs):
+    try:
+        future = _get_executor().submit(fn, *args, **kwargs)
+    except RuntimeError:
+        # interpreter shutdown 중 executor 사용 불가 → 직접 실행
+        return fn(*args, **kwargs)
+    return future.result(timeout=timeout)
 
 
 def _err(e: Exception) -> JsonResponse:
@@ -62,7 +80,7 @@ def district_ticker(request):
     start_date = body.get('start_date', '202501')
     end_date   = body.get('end_date', '202512')
     try:
-        data = _run(services.svc_district_ticker, City, start_date, end_date)
+        data = _run(services.svc_district_ticker, City, start_date, end_date, timeout=10)
         return JsonResponse(data, encoder=_SafeEncoder)
     except Exception as e:
         return _err(e)
@@ -125,6 +143,22 @@ def address_results(request):
         return JsonResponse({'ok': False, 'error': '필수 파라미터 누락: selected_address, selected_complex, selected_area'}, status=400)
     try:
         data = _run(services.svc_address_results, body)
+        return JsonResponse(data, encoder=_SafeEncoder)
+    except Exception as e:
+        return _err(e)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def address_district_bars(request):
+    """구별 비교 지연 로딩 — 캐시 확인 후 즉시 반환 (pending=true/false)"""
+    body = _body(request)
+    err  = _require_base(body)
+    if err: return err
+    if body.get('selected_area') is None:
+        return JsonResponse({'ok': False, 'error': '필수 파라미터 누락: selected_area'}, status=400)
+    try:
+        data = _run(services.svc_district_bars, body, timeout=10)
         return JsonResponse(data, encoder=_SafeEncoder)
     except Exception as e:
         return _err(e)
